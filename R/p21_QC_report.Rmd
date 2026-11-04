@@ -1,0 +1,573 @@
+---
+title: "p21 bulk RNA-seq | Quality control"
+subtitle: "Sample integrity, experimental balance and exploratory expression structure"
+date: "`r format(Sys.Date(), '%d %B %Y')`"
+output:
+  pdf_document:
+    toc: true
+    number_sections: true
+    latex_engine: xelatex
+  html_document:
+    toc: true
+    toc_float: true
+    number_sections: true
+    theme: flatly
+    df_print: kable
+    self_contained: true
+---
+
+```{r setup, include=FALSE}
+## ************************************************************************************************
+## p21 bulk RNA-seq
+## 02 - Quality control and exploratory data analysis
+##
+## Scope:
+##   - Describe sample composition, count metrics and processing structure.
+##   - Inspect sample similarity and identify candidates for manual review.
+##   - Compare unadjusted, processing-adjusted and processing+run-adjusted VST.
+##
+## Important:
+##   - The five prespecified UKD MCF10A WT controls remain excluded.
+##   - No additional samples are removed by this report.
+##   - Batch adjustment is exploratory and only applied to VST for PCA.
+##   - The processed DESeq2 fit and original counts are not modified.
+##   - Every figure is exported as PNG + SVG via ekbSeq::export_plot_dual().
+##   - Results are saved as CSV tables; no QC intermediate RDS files are created.
+## ************************************************************************************************
+
+## Use one explicit project root for RStudio Knit and command-line rendering.
+if (!requireNamespace("here", quietly = TRUE)) stop("Install the 'here' package first.")
+here::i_am("R/p21_QC_report.Rmd")
+knitr::opts_knit$set(root.dir = here::here())
+if (!file.exists(here::here("Data", "processed_data.rds")))
+  stop("Missing Data/processed_data.rds. Run R/01_data_processing.R first.")
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE, fig.align = "center",
+                      out.width = "100%", dpi = 140)
+
+qc_packages <- c("DESeq2", "SummarizedExperiment", "ggplot2", "dplyr", "tidyr", "knitr",
+                 "ComplexHeatmap", "circlize", "matrixStats", "limma", "ekbSeq", "svglite", "here")
+missing_packages <- qc_packages[!vapply(qc_packages, requireNamespace, logical(1), quietly = TRUE)]
+if (length(missing_packages)) stop("Install QC packages: ", paste(missing_packages, collapse = ", "))
+if (utils::packageVersion("ggplot2") < "3.5.0")
+  stop("ggplot2 >= 3.5.0 is needed to draw axes in every PCA facet.")
+
+processed_data <- readRDS(here::here("Data", "processed_data.rds"))
+dds <- processed_data$dds
+vsd <- processed_data$vsd
+meta <- as.data.frame(SummarizedExperiment::colData(dds))
+meta <- meta[colnames(dds), , drop = FALSE]
+stopifnot(identical(meta$ID, colnames(dds)), identical(colnames(vsd), colnames(dds)))
+
+results_dir <- here::here("Results", "02_QC")
+fig_dir <- here::here("Results", "02_QC", "figures")
+table_dir <- here::here("Results", "02_QC", "tables")
+dir.create(fig_dir, recursive = TRUE, showWarnings = FALSE)
+dir.create(table_dir, recursive = TRUE, showWarnings = FALSE)
+
+## **** Shared project-wide figure style (Nature NPG colors, Prism-inspired axes)
+source(here::here("R", "plot_style.R"))
+run_levels <- levels(meta$sequencing_run)
+run_colors <- stats::setNames(c(npg_colors[["lavender"]], npg_colors[["brown"]])[seq_along(run_levels)], run_levels)
+
+## **** Export figures with ekbSeq; embed exported PNGs into PDF or HTML.
+## Project-relative paths are resolved through here::here().
+## Keep rel_path = FALSE when embedding PNGs: knitr otherwise tries to
+## rewrite absolute paths relative to the Rmd/output directory.
+export_figure <- function(name, plot, width = 10, height = 5.5) {
+  filename <- file.path(fig_dir, name)
+  ekbSeq::export_plot_dual(filename, plot, width = width, height = height,
+                           dpi = 300, rasterize = FALSE)
+  paste0(filename, ".png")
+}
+
+include_qc_figure <- function(path) {
+  absolute_path <- normalizePath(path, winslash = "/", mustWork = TRUE)
+  knitr::include_graphics(absolute_path, rel_path = FALSE)
+}
+
+## VST-based exploratory QC excludes genes with negligible expression only for display.
+## This is NOT a prefilter of the genes entering the DESeq2 model.
+raw_counts <- DESeq2::counts(dds)
+norm_counts <- DESeq2::counts(dds, normalized = TRUE)
+expressed <- rowSums(norm_counts >= 10) >= 5
+if (sum(expressed) < 100L) stop("Too few sufficiently expressed genes for QC.")
+m <- SummarizedExperiment::assay(vsd)[expressed, , drop = FALSE]
+
+## PCA compares unadjusted/adjusted views using the SAME top-variable genes.
+choose_pca_genes <- function(expression, ntop = 1500L) {
+  rownames(expression)[head(order(matrixStats::rowVars(expression), decreasing = TRUE), ntop)]
+}
+
+pca_scores <- function(expression, metadata, genes = choose_pca_genes(expression)) {
+  if (!all(genes %in% rownames(expression))) stop("PCA features missing from input expression matrix.")
+  fit <- stats::prcomp(t(expression[genes, , drop = FALSE]), center = TRUE)
+  scores <- cbind(metadata[colnames(expression), , drop = FALSE], as.data.frame(fit$x[, 1:2, drop = FALSE]))
+  attr(scores, "pcvar") <- round(100 * fit$sdev[1:2]^2 / sum(fit$sdev^2), 1)
+  scores
+}
+
+pca_plot <- function(scores, title, color_by, facet_by = NULL) {
+  explained <- attr(scores, "pcvar")
+  p <- ggplot2::ggplot(scores, ggplot2::aes(PC1, PC2, color = .data[[color_by]], shape = genotype)) +
+    ggplot2::geom_point(size = 3.0, alpha = 0.95) +
+    ggplot2::scale_shape_manual(values = genotype_shapes, name = "p21 status") +
+    ggplot2::scale_color_manual(values = if (color_by == "cell_line") cell_colors else radiation_colors,
+                                name = if (color_by == "cell_line") "Cell line" else "Irradiation") +
+    ggplot2::labs(title = title, x = sprintf("PC1: %.1f%% variance", explained[1]),
+                  y = sprintf("PC2: %.1f%% variance", explained[2])) + p21_theme()
+  if (!is.null(facet_by)) {
+    p <- p + ggplot2::facet_wrap(stats::as.formula(paste("~", facet_by)), nrow = 1,
+                                 axes = "all", axis.labels = "all")
+  }
+  p
+}
+```
+
+# Dataset and experimental design
+
+## Sample inventory
+
+**Methods.** The QC analysis uses the final DESeq2 object from `Data/processed_data.rds`. Five previously excluded MCF10A WT control samples remain excluded, and ERCC/SIRV spike-ins were removed before normalization and model fitting. We examine sequencing depth, RNA quality and the similarity of biological replicates; no further samples are removed in this report.
+
+The dataset contains **`r ncol(dds)` samples** and **`r format(nrow(dds), big.mark = ",")` endogenous features** from two cell lines (HT1080 and MCF10A), two p21 genotypes (WT and p21-negative), and four irradiation conditions (control, 7 Gy, UVA and UVB). The current primary differential-expression model is `~ processing + group`. A second, extended model (`~ processing + sequencing_run + group`) will be evaluated later in the primary DE analysis. Batch adjustments in this QC report are applied **only to VST values for visual exploration**, not to the count data or DESeq2 model.
+
+```{r study-design}
+## **** Shared experimental design: compact 16-group summary
+study_design <- as.data.frame(with(meta, table(cell_line, genotype, radiation, processing)))
+names(study_design) <- c("cell_line", "genotype", "irradiation", "processing", "n")
+study_wide <- tidyr::pivot_wider(study_design, names_from = processing, values_from = n)
+study_wide$total <- study_wide$EKB + study_wide$UKD
+utils::write.csv(study_wide, file.path(table_dir, "sample_design_summary.csv"), row.names = FALSE)
+knitr::kable(study_wide, row.names = FALSE, caption = "Sample counts by cell line, genotype, irradiation and processing.")
+```
+
+```{r study-design-plot, fig.cap="Experimental balance across cell lines, p21 genotypes and irradiation conditions. Stacked segments show the number of samples processed at EKB (blue) or UKD (red); labels inside the segments give the replicate count, and totals are shown at the bar ends. A missing segment indicates that no sample was available for that processing group.", fig.align="center"}
+## **** Horizontal stacked bars make zeros and unequal controls clear at a glance.
+plot_design <- study_design
+plot_design$irradiation <- factor(plot_design$irradiation, levels = c("UVB", "UVA", "7gy", "control"), labels = c("UVB", "UVA", "7 Gy", "Control"))
+plot_design$context <- factor(paste(plot_design$cell_line, ifelse(plot_design$genotype == "wt", "WT", "p21-negative"), sep = " | "),
+                              levels = c("HT1080 | WT", "HT1080 | p21-negative", "MCF10A | WT", "MCF10A | p21-negative"))
+plot_totals <- stats::aggregate(n ~ context + irradiation, plot_design, sum)
+
+p_design <- ggplot2::ggplot(plot_design, ggplot2::aes(x = irradiation, y = n, fill = processing)) +
+  ggplot2::geom_col(width = 0.66, color = "white", linewidth = 0.35) +
+  ggplot2::geom_text(data = subset(plot_design, n > 0), ggplot2::aes(label = n),
+                     position = ggplot2::position_stack(vjust = 0.5), color = "white", size = 3.5) +
+  ggplot2::geom_text(data = plot_totals, ggplot2::aes(x = irradiation, y = n + 0.15, label = n),
+                     inherit.aes = FALSE, vjust = 0.5, size = 3, color = "#333333") +
+  ggplot2::facet_wrap(~context, ncol = 2, axes = "all", axis.labels = "all") +
+  ggplot2::coord_flip() +
+  ggplot2::scale_fill_manual(values = processing_colors, name = "Processing") +
+  ggplot2::scale_y_continuous(breaks = c(0, 5, 10), limits = c(0, 10.2), expand = c(0, 0)) +
+  ggplot2::labs(x = "Irradiation", y = "Number of samples") + p21_theme()
+include_qc_figure(export_figure("design_balance", p_design, 9, 6.2))
+```
+
+```{r run-overview}
+## **** Distinguish processing location from sequencing run.
+run_overview <- as.data.frame(with(meta, table(processing, sequencing_run)))
+names(run_overview) <- c("processing", "sequencing_run", "n")
+knitr::kable(run_overview, row.names = FALSE,
+             caption = "Processing location and sequencing run are different metadata variables.")
+```
+
+**Interpretation.** All 16 biological groups are present. However, not all groups were processed at both sites. UVB samples were processed at EKB, whereas UVA and 7 Gy samples were processed at UKD. Most control groups include samples from both sites, but MCF10A WT has only the four EKB controls after the five prespecified UKD exclusions. This distribution matters when interpreting PCA and clustering: differences between irradiation groups may also reflect processing. The current DESeq2 model accounts for processing under the agreed common additive assumption; a model additionally adjusting for sequencing run will be tested separately. This QC plot alone provides no reason to remove further samples.
+
+# Sequencing depth and RNA quality
+
+## Sequencing depth and feature detection
+
+**Methods.** Library size is the total number of endogenous counts after spike-in removal; detected features are those with at least one count in a sample. Both measures describe sample characteristics before interpretation of expression differences. Distributions are shown by processing site and cell line, with the p21 genotypes identified by color and symbol.
+
+```{r count-metrics, fig.cap="Endogenous library size per sample. Boxplots summarize each processing group within a cell line, and individual points show biological samples. Colors and symbols distinguish WT and p21-negative cells."}
+## **** Sample-level QC metrics produced during data processing
+qc_counts_file <- here::here("Results", "01_data_processing", "tables", "sample_count_summary.csv")
+if (!file.exists(qc_counts_file)) stop("Missing sample_count_summary.csv from 01_data_processing.R")
+count_metrics <- utils::read.csv(qc_counts_file)
+metrics <- merge(meta, count_metrics, by = "ID", sort = FALSE)
+metrics <- metrics[match(meta$ID, metrics$ID), , drop = FALSE]
+stopifnot(nrow(metrics) == nrow(meta), identical(metrics$ID, meta$ID), !any(metrics$excluded))
+metrics$library_millions <- metrics$endogenous_library_counts / 1e6
+metrics$detected_genes <- metrics$endogenous_detected_features
+
+p_depth <- ggplot2::ggplot(metrics, ggplot2::aes(processing, library_millions)) +
+  ggplot2::geom_boxplot(width = 0.45, fill = "white", color = "black", linewidth = 0.5,
+                        outlier.shape = NA) +
+  ggplot2::geom_point(ggplot2::aes(color = genotype, shape = genotype),
+                      position = ggplot2::position_jitter(width = 0.11, height = 0, seed = 21),
+                      size = 2.4, alpha = 0.9) +
+  ggplot2::facet_wrap(~cell_line) + ggplot2::scale_color_manual(values = genotype_colors, name = "p21 status") +
+  ggplot2::scale_shape_manual(values = genotype_shapes, name = "p21 status") +
+  ggplot2::labs(title = "Count totals after spike-in removal", x = "Processing", y = "Endogenous counts (millions)") + p21_theme()
+include_qc_figure(export_figure("sample_library_counts", p_depth, 9, 5))
+```
+
+```{r feature-counts, fig.cap="Number of detected endogenous features per sample. Each point represents one library; features are counted when their raw endogenous count is greater than zero."}
+p_features <- ggplot2::ggplot(metrics, ggplot2::aes(processing, detected_genes)) +
+  ggplot2::geom_boxplot(width = 0.45, fill = "white", color = "black", linewidth = 0.5,
+                        outlier.shape = NA) +
+  ggplot2::geom_point(ggplot2::aes(color = genotype, shape = genotype),
+                      position = ggplot2::position_jitter(width = 0.11, height = 0, seed = 21),
+                      size = 2.4, alpha = 0.9) +
+  ggplot2::facet_wrap(~cell_line) + ggplot2::scale_color_manual(values = genotype_colors, name = "p21 status") +
+  ggplot2::scale_shape_manual(values = genotype_shapes, name = "p21 status") +
+  ggplot2::labs(title = "Detected endogenous features", x = "Processing", y = "Features with nonzero counts") + p21_theme()
+include_qc_figure(export_figure("sample_detected_features", p_features, 9, 5))
+```
+
+**Interpretation.** The 91 retained libraries contain **`r format(round(min(metrics$library_millions), 2), nsmall = 2)`–`r format(round(max(metrics$library_millions), 2), nsmall = 2)` million** endogenous counts (median: **`r format(round(median(metrics$library_millions), 2), nsmall = 2)` million**). Detected endogenous features range from **`r min(metrics$detected_genes)` to `r max(metrics$detected_genes)`** (median: **`r round(median(metrics$detected_genes))`**). The HT1080 samples show a visible processing-related difference in detected features, with generally higher counts among EKB than UKD preparations; the distributions overlap more strongly in MCF10A. This finding is descriptive and may reflect experimental or technical composition, not necessarily failed samples. The per-sample measurements are recorded in `sample_count_summary.csv`.
+
+## RNA integrity and available technical metrics
+
+**Methods.** Available sample metadata are summarized without applying new exclusion thresholds. RNA integrity number (RIN) is used to describe RNA quality; metrics absent from the metadata are explicitly reported as missing rather than as passed.
+
+```{r metadata-qc}
+## **** Compact per-metric coverage; no 91-row metadata dump
+qc_fields <- intersect(c("rna_input_ng", "rna_quality_rin", "pf_reads_sample", "pf_reads_sample_percent",
+                         "tape_d1000_conc_ngul"), names(meta))
+qc_summary <- do.call(rbind, lapply(qc_fields, function(field) {
+  values <- suppressWarnings(as.numeric(gsub(",", ".", as.character(meta[[field]]))))
+  good <- values[is.finite(values)]
+  data.frame(metric = field, available = length(good), missing = nrow(meta) - length(good),
+             median = if (length(good)) median(good) else NA_real_,
+             min = if (length(good)) min(good) else NA_real_,
+             max = if (length(good)) max(good) else NA_real_)
+}))
+if (!is.null(qc_summary)) {
+  utils::write.csv(qc_summary, file.path(table_dir, "metadata_qc_summary.csv"), row.names = FALSE)
+  knitr::kable(qc_summary, digits = 2, row.names = FALSE,
+               caption = "Coverage and descriptive distribution of available sample-level QC metrics.")
+}
+```
+
+```{r rin-plot, fig.cap="RNA integrity of the retained samples. Each point is one RNA preparation, colored by cell line and shaped by p21 genotype. The plot shows descriptive RIN values, not a pass/fail cutoff."}
+if ("rna_quality_rin" %in% names(meta)) {
+  rin <- suppressWarnings(as.numeric(gsub(",", ".", as.character(meta$rna_quality_rin))))
+  rin_data <- data.frame(meta, RIN = rin)
+  if (sum(is.finite(rin)) > 3) {
+    p_rin <- ggplot2::ggplot(rin_data, ggplot2::aes(processing, RIN, color = cell_line, shape = genotype)) +
+      ggplot2::geom_point(position = ggplot2::position_jitter(width = 0.11, height = 0, seed = 21),
+                          size = 2.6, alpha = 0.9) +
+      ggplot2::scale_color_manual(values = cell_colors, name = "Cell line") +
+      ggplot2::scale_shape_manual(values = genotype_shapes, name = "p21 status") +
+      ggplot2::labs(title = "RNA integrity", x = "Processing", y = "RIN") + p21_theme()
+    include_qc_figure(export_figure("rna_integrity", p_rin, 8, 5))
+  }
+}
+```
+
+**Interpretation.** RIN is available for all `r sum(is.finite(rin))` samples, with a median of `r format(median(rin, na.rm = TRUE), digits = 2)` and a range of `r format(min(rin, na.rm = TRUE), digits = 2)`–`r format(max(rin, na.rm = TRUE), digits = 2)`. The figure suggests broader RIN variation in UKD-processed samples than in EKB-processed samples, but several samples from both groups overlap. The `pf_reads_sample` fields are unavailable and must not be interpreted as passing QC. Overall, these metrics identify possible technical heterogeneity; they do **not** justify excluding a sample by themselves.
+
+# DESeq2 model diagnostics
+
+**Methods.** DESeq2 estimates a dispersion for each gene to describe variability among biological replicates. We inspect whether these estimates broadly follow the fitted relationship with average gene expression, as expected for RNA-seq data.
+
+```{r dispersion-fit, fig.cap="Dispersion estimates from the fitted DESeq2 model. Black points represent gene-wise estimates, the red curve is the fitted mean–dispersion trend and blue points are the final estimates used in statistical testing."}
+## **** Dispersion estimates should follow a plausible mean-dispersion trend.
+## Base graphics are exported through ekbSeq, not as stand-alone PDF figures.
+ekbSeq::export_plot_dual(file.path(fig_dir, "DESeq2_dispersion_fit"),
+  quote(DESeq2::plotDispEsts(dds)), width = 8, height = 6, dpi = 300,
+  base_graphics = TRUE)
+include_qc_figure(file.path(fig_dir, "DESeq2_dispersion_fit.png"))
+```
+
+**Interpretation.** The final gene-wise dispersion estimates follow the fitted mean–dispersion trend overall. As expected, lower-count features show a broader dispersion range, while highly expressed features typically have lower dispersion. The overall fit does not suggest a failure of dispersion estimation. This plot cannot rule out individual influential observations, for which Cook's-distance diagnostics would be required. It provides no reason to exclude additional samples.
+
+# Sample similarity and replicate consistency
+
+**Methods.** For exploratory similarity plots, features are required to have **at least 10 normalized counts in at least five samples**. This QC-only expression filter retains **`r nrow(m)` features**. It does not modify the DESeq2 model or its tested gene universe.
+
+## Pearson sample correlation
+
+**Methods.** Pearson correlation is calculated between samples from their VST-transformed profiles. Values closer to one indicate more similar *relative expression patterns*. The matrix is hierarchically clustered using `1 − correlation` as a distance measure.
+
+```{r sample-correlation, fig.cap="Pairwise Pearson correlations between the 91 retained samples on VST-transformed expression profiles. Dark blue indicates higher correlation. Annotation bars show cell line, genotype, irradiation, processing and sequencing run."}
+## **** Pearson correlation across samples; rows/columns must match the metadata.
+correlation <- stats::cor(m, method = "pearson")
+if (!is.matrix(correlation) || nrow(correlation) != ncol(m) ||
+    !identical(rownames(correlation), colnames(m)) ||
+    !identical(colnames(correlation), colnames(m)) ||
+    any(!is.finite(correlation)))
+  stop("Invalid sample correlation matrix. Check sample order, expression values and filtering.")
+
+## Convert similarity to a full square distance matrix BEFORE as.dist().
+## Do not use pmax(0, 1 - correlation): pmax() can drop matrix dimensions.
+cor_distance <- 1 - correlation
+cor_distance[cor_distance < 0] <- 0  # numerical rounding at r = 1
+diag(cor_distance) <- 0
+stopifnot(is.matrix(cor_distance), nrow(cor_distance) == ncol(m),
+          isTRUE(all.equal(cor_distance, t(cor_distance), tolerance = 1e-10)))
+cluster_samples <- stats::hclust(stats::as.dist(cor_distance), method = "complete")
+
+annotation_colors <- list(`Cell line` = cell_colors, `p21 status` = genotype_colors,
+                          Irradiation = radiation_colors, Processing = processing_colors,
+                          `Sequencing run` = run_colors)
+ha <- ComplexHeatmap::HeatmapAnnotation(
+  `Cell line` = meta$cell_line, `p21 status` = meta$genotype,
+  Irradiation = meta$radiation, Processing = meta$processing,
+  `Sequencing run` = meta$sequencing_run, col = annotation_colors,
+  simple_anno_size = grid::unit(0.24, "cm"),
+  annotation_name_gp = grid::gpar(fontsize = 9))
+
+low_r <- min(correlation[upper.tri(correlation)])
+cor_colors <- circlize::colorRamp2(c(low_r, (low_r + 1) / 2, 1), c("#FFFFFF", npg_colors[["cyan"]], npg_colors[["navy"]]))
+ht_cor <- ComplexHeatmap::Heatmap(correlation, name = "Pearson r", col = cor_colors,
+  cluster_rows = cluster_samples, cluster_columns = cluster_samples,
+  top_annotation = ha, show_row_names = FALSE, show_column_names = FALSE,
+  row_dend_width = grid::unit(14, "mm"), column_dend_height = grid::unit(14, "mm"),
+  heatmap_legend_param = list(title_gp = grid::gpar(fontface = "bold")), use_raster = TRUE)
+ekbSeq::export_plot_dual(file.path(fig_dir, "sample_correlation"),
+  quote(ComplexHeatmap::draw(ht_cor, heatmap_legend_side = "right", annotation_legend_side = "right")),
+  width = 13, height = 11, dpi = 300, grid_capture = TRUE)
+include_qc_figure(file.path(fig_dir, "sample_correlation.png"))
+```
+
+**Interpretation.** The heatmap contains two large groups: HT1080 samples cluster mainly with HT1080, and MCF10A samples cluster mainly with MCF10A. Correlations between the two cell lines are lower than those within a cell line, as expected from their different origins. Smaller clusters can be seen within each cell line, but these partly coincide with the processing sites. Clustering alone therefore cannot establish an irradiation effect.
+
+## Euclidean VST sample distances
+
+**Methods.** Euclidean distances are calculated between samples using the same VST expression matrix as for the correlation heatmap. Here, *smaller* values indicate greater similarity. Rows and columns are clustered from the Euclidean distances themselves.
+
+```{r sample-distance, fig.cap="Euclidean sample-to-sample distances calculated from VST-transformed expression. Dark blue indicates small distances (more similar samples), while lighter colors indicate larger distances. Metadata annotation bars match the correlation heatmap."}
+## **** Euclidean VST distances: use the same metric for the heatmap and clustering.
+## The Pearson correlation heatmap retains its separate correlation-based clustering.
+distance <- as.matrix(stats::dist(t(m), method = "euclidean"))
+stopifnot(is.matrix(distance), nrow(distance) == ncol(m),
+          identical(rownames(distance), colnames(m)),
+          identical(colnames(distance), colnames(m)),
+          all(is.finite(distance)),
+          isTRUE(all.equal(distance, t(distance), tolerance = 1e-10)))
+cluster_distance <- stats::hclust(stats::as.dist(distance), method = "complete")
+max_dist <- max(distance)
+dist_colors <- circlize::colorRamp2(c(0, max_dist / 2, max_dist), c(npg_colors[["navy"]], npg_colors[["cyan"]], "#FFFFFF"))
+ht_dist <- ComplexHeatmap::Heatmap(distance, name = "VST distance", col = dist_colors,
+  cluster_rows = cluster_distance, cluster_columns = cluster_distance,
+  top_annotation = ha, show_row_names = FALSE, show_column_names = FALSE,
+  row_dend_width = grid::unit(14, "mm"), column_dend_height = grid::unit(14, "mm"),
+  heatmap_legend_param = list(title_gp = grid::gpar(fontface = "bold")), use_raster = TRUE)
+ekbSeq::export_plot_dual(file.path(fig_dir, "sample_distance"),
+  quote(ComplexHeatmap::draw(ht_dist, heatmap_legend_side = "right", annotation_legend_side = "right")),
+  width = 13, height = 11, dpi = 300, grid_capture = TRUE)
+include_qc_figure(file.path(fig_dir, "sample_distance.png"))
+```
+
+**Interpretation.** The distance heatmap confirms the separation of HT1080 and MCF10A. Unlike Pearson correlation, Euclidean distance also responds to the *size* of expression differences, not just the similarity of expression patterns. Neither heatmap shows one sample that is clearly separated from all others. To find samples that deserve a closer look, we therefore compare each replicate with the other samples in its own biological group and processing site.
+
+```{r review-samples}
+## **** Rank samples by their median distance to replicates sharing group AND processing.
+## These are review candidates, not automated outlier calls. Some groups contain only 2-3 replicates.
+within_group_distance <- vapply(seq_len(nrow(meta)), function(i) {
+  peers <- which(meta$group == meta$group[i] & meta$processing == meta$processing[i])
+  peers <- setdiff(peers, i)
+  if (!length(peers)) return(NA_real_)
+  stats::median(distance[i, peers])
+}, numeric(1))
+review <- data.frame(ID = meta$ID, cell_line = meta$cell_line, genotype = meta$genotype,
+                     irradiation = meta$radiation, processing = meta$processing,
+                     sequencing_run = meta$sequencing_run,
+                     median_within_group_VST_distance = within_group_distance)
+review <- review[order(review$median_within_group_VST_distance, decreasing = TRUE, na.last = TRUE), ]
+utils::write.csv(review, file.path(table_dir, "sample_distance_review.csv"), row.names = FALSE)
+knitr::kable(head(review, 10), digits = 1, row.names = FALSE,
+             caption = "Highest median VST distances to replicates within the same biological group and processing context. For manual review only.")
+```
+
+```{r sample-review-plot, fig.cap="Samples with the largest median Euclidean distance to other samples of the same biological group and processing site. Points are exploratory review candidates rather than automatically identified outliers."}
+review_top <- head(review[is.finite(review$median_within_group_VST_distance), ], 12)
+review_top$ID <- factor(review_top$ID, levels = rev(review_top$ID))
+p_review <- ggplot2::ggplot(review_top,
+  ggplot2::aes(x = ID, y = median_within_group_VST_distance)) +
+  ggplot2::geom_segment(ggplot2::aes(xend = ID, yend = 0),
+                        color = "#C5C5C5", linewidth = 0.65) +
+  ggplot2::geom_point(ggplot2::aes(color = cell_line), size = 3.1) +
+  ggplot2::coord_flip() +
+  ggplot2::scale_color_manual(values = cell_colors, name = "Cell line") +
+  ggplot2::scale_y_continuous(expand = ggplot2::expansion(mult = c(0, 0.05))) +
+  ggplot2::labs(title = "Samples for manual distance review",
+                subtitle = "Within biological group and processing context",
+                x = "Sample ID", y = "Median VST distance to peers") + p21_theme()
+include_qc_figure(export_figure("sample_distance_review", p_review, 8, 5))
+```
+
+**Interpretation.** The largest median within-group VST distance is observed for **`r review$ID[1]`** (`r review$cell_line[1]`, `r review$genotype[1]`, `r review$irradiation[1]`; `r round(review$median_within_group_VST_distance[1], 1)`), followed by **`r review$ID[2]`** (`r round(review$median_within_group_VST_distance[2], 1)`) and **`r review$ID[3]`** (`r round(review$median_within_group_VST_distance[3], 1)`). These samples should be inspected against their true biological peers, including sequencing depth, RIN, replicate consistency and run assignment. Ranking is sensitive to the number of available peers and does **not** define statistical outliers or mandate exclusions.
+
+# Principal component analysis
+
+**Methods.** PCA summarizes the main sources of variation in expression data. We use the 1,500 most variable expressed genes within each analysis dataset. The global PCA includes all 91 samples; additional PCAs are calculated independently within HT1080 and MCF10A to reveal variation that can be hidden by large cell-line differences. Within each dataset, all three variants use **exactly the same 1,500 genes**, selected by variance from unadjusted VST values. The axes are re-estimated separately for each variant: (i) no correction, (ii) correction for processing, and (iii) joint correction for processing and sequencing run. The corrections use `limma::removeBatchEffect()` with a design preserving the 16 biological groups. This is important for exploratory comparisons, but it also means that variation completely aligned with a biological group (for example, UVB and its processing site) cannot be reliably identified as technical and removed independently. PCA is descriptive and does not test differential expression or quantify the fraction of batch variation removed.
+
+To help comparisons across EKB and UKD panels, every facet displays its own axes while keeping a **shared coordinate scale within a given PCA**.
+
+## Global PCA: unadjusted and batch-adjusted VST
+
+```{r global-pca-data, include=FALSE}
+## **** Estimate additive technical components while preserving all 16 groups.
+## A full-rank design is necessary; the model remains an assumption because the
+## sequencing runs and processing sites are unevenly represented across groups.
+biology <- stats::model.matrix(~ group, data = meta)
+model_processing <- stats::model.matrix(~ processing + group, data = meta)
+model_both <- stats::model.matrix(~ processing + sequencing_run + group, data = meta)
+if (qr(model_processing)$rank != ncol(model_processing) || qr(model_both)$rank != ncol(model_both))
+  stop("Processing and/or sequencing run cannot be estimated separately from the groups.")
+
+corrected <- limma::removeBatchEffect(m, batch = meta$processing, design = biology)
+corrected_both <- limma::removeBatchEffect(m, batch = meta$processing,
+                                           batch2 = meta$sequencing_run, design = biology)
+stopifnot(identical(dim(m), dim(corrected)), identical(dim(m), dim(corrected_both)),
+          all(is.finite(corrected)), all(is.finite(corrected_both)))
+
+## **** Select genes once, on unadjusted data, for a fair three-way comparison.
+global_genes <- choose_pca_genes(m)
+raw_global <- pca_scores(m, meta, genes = global_genes)
+adj_global <- pca_scores(corrected, meta, genes = global_genes)
+both_global <- pca_scores(corrected_both, meta, genes = global_genes)
+p_global_raw <- pca_plot(raw_global, "Global PCA | Unadjusted VST", "cell_line", "processing")
+p_global_adj <- pca_plot(adj_global, "Global PCA | Processing-adjusted VST", "cell_line", "processing")
+p_global_both <- pca_plot(both_global, "Global PCA | Processing + run-adjusted VST", "cell_line", "processing")
+```
+
+```{r global-pca-unadjusted-figure, fig.cap="Global principal component analysis of all retained samples, based on the 1,500 most variable expressed genes in the unadjusted VST matrix. Colors identify cell lines, symbols represent p21 genotype, and panels separate processing sites. PC1 and PC2 are calculated jointly across all samples."}
+include_qc_figure(export_figure("PCA_global_unadjusted", p_global_raw, 9, 4.2))
+```
+
+```{r global-pca-adjusted-figure, fig.cap="Global PCA after removing the estimated common processing effect for visualization only. The same genes are retained, but the PCA is recomputed after display adjustment; its coordinates must not be compared numerically with the unadjusted PCA."}
+include_qc_figure(export_figure("PCA_global_processing_adjusted", p_global_adj, 9, 4.2))
+```
+
+```{r global-pca-both-figure, fig.cap="Global PCA after the simultaneous removal of estimated processing and sequencing-run effects from VST values using limma, preserving biological group membership. The same 1,500 genes are used across all three PCA variants; the PCA coordinates are recalculated. The correction is for QC visualization only."}
+include_qc_figure(export_figure("PCA_global_processing_run_adjusted", p_global_both, 9, 4.2))
+```
+
+**Interpretation.** The strongest signal is the difference between HT1080 and MCF10A. PC1 explains **`r attr(raw_global, "pcvar")[1]`%** of the unadjusted variance, compared with **`r attr(adj_global, "pcvar")[1]`%** after processing adjustment and **`r attr(both_global, "pcvar")[1]`%** after additional sequencing-run adjustment. PC2 accounts for **`r attr(raw_global, "pcvar")[2]`%**, **`r attr(adj_global, "pcvar")[2]`%**, and **`r attr(both_global, "pcvar")[2]`%**, respectively. Thus, the dominant cell-line separation persists across all three versions; there is no major rearrangement of the global expression structure. The PCs are recomputed for each version, so their coordinates and percentages cannot be used to calculate how much batch variation was removed. More importantly, the batch correction explicitly preserves biological-group differences. Therefore, persistence of a treatment-related separation does **not** independently confirm that it is free of technical confounding. The cell-line-specific PCAs are more informative for within-line variation.
+
+## Cell-line-specific PCA: HT1080 and MCF10A
+
+```{r cell-line-pca-HT1080-data, include=FALSE}
+## **** Independently recalculate PC axes within the HT1080 subset.
+ht_ids <- meta$ID[meta$cell_line == "HT1080"]
+ht_meta <- meta[ht_ids, , drop = FALSE]
+ht_genes <- choose_pca_genes(m[, ht_ids, drop = FALSE])
+ht_raw <- pca_scores(m[, ht_ids, drop = FALSE], ht_meta, genes = ht_genes)
+ht_adjusted <- pca_scores(corrected[, ht_ids, drop = FALSE], ht_meta, genes = ht_genes)
+ht_both <- pca_scores(corrected_both[, ht_ids, drop = FALSE], ht_meta, genes = ht_genes)
+
+p_ht_raw <- pca_plot(ht_raw, "HT1080 | Unadjusted VST", "radiation", "processing")
+p_ht_adjusted <- pca_plot(ht_adjusted, "HT1080 | Processing-adjusted VST", "radiation", "processing")
+p_ht_both <- pca_plot(ht_both, "HT1080 | Processing + run-adjusted VST", "radiation", "processing")
+```
+
+```{r ht1080-pca-unadjusted-figure, fig.cap="HT1080-only PCA using the 1,500 most variable genes within HT1080. Samples are colored by irradiation, shaped by p21 genotype and separated by processing site. Principal components are recomputed within the cell line."}
+include_qc_figure(export_figure("PCA_HT1080_unadjusted", p_ht_raw, 9, 4.2))
+```
+
+```{r ht1080-pca-adjusted-figure, fig.cap="HT1080-only PCA after visual processing adjustment. The same selected genes are used as in the preceding panel, but the principal components are re-estimated. Both EKB and UKD panels share axes and display their own y-axis ticks."}
+include_qc_figure(export_figure("PCA_HT1080_processing_adjusted", p_ht_adjusted, 9, 4.2))
+```
+
+```{r ht1080-pca-both-figure, fig.cap="HT1080-only PCA after joint limma adjustment for processing and sequencing run, with biological groups preserved. The same 1,500 unadjusted HT1080-variable genes are used across the three variants; each facet has its own axes and shares limits within the plot."}
+include_qc_figure(export_figure("PCA_HT1080_processing_run_adjusted", p_ht_both, 9, 4.2))
+```
+
+**Interpretation (HT1080).** Within HT1080, the first two PCs explain **`r attr(ht_raw, "pcvar")[1]`%** and **`r attr(ht_raw, "pcvar")[2]`%** of the unadjusted variance, **`r attr(ht_adjusted, "pcvar")[1]`%** and **`r attr(ht_adjusted, "pcvar")[2]`%** after processing adjustment, and **`r attr(ht_both, "pcvar")[1]`%** and **`r attr(ht_both, "pcvar")[2]`%** after adjustment for both technical factors. Compact UVB clusters and additional genotype-associated subdivisions remain visible in the adjusted plots. The relative placement of the UKD groups changes somewhat following run adjustment, but the overall grouping is not lost. These patterns suggest structured within-line variation and some sensitivity to the technical adjustment, not the complete removal or absence of batch effects. In particular, UVB was processed exclusively at EKB, whereas UVA and 7 Gy were processed at UKD; the correction preserves the associated biological groups by design and cannot prove that the UVB separation is irradiation-specific. Formal treatment and p21-interaction contrasts will be needed.
+
+```{r cell-line-pca-MCF10A-data, include=FALSE}
+## **** Independently recalculate PC axes within the MCF10A subset.
+mcf_ids <- meta$ID[meta$cell_line == "MCF10A"]
+mcf_meta <- meta[mcf_ids, , drop = FALSE]
+mcf_genes <- choose_pca_genes(m[, mcf_ids, drop = FALSE])
+mcf_raw <- pca_scores(m[, mcf_ids, drop = FALSE], mcf_meta, genes = mcf_genes)
+mcf_adjusted <- pca_scores(corrected[, mcf_ids, drop = FALSE], mcf_meta, genes = mcf_genes)
+mcf_both <- pca_scores(corrected_both[, mcf_ids, drop = FALSE], mcf_meta, genes = mcf_genes)
+
+p_mcf_raw <- pca_plot(mcf_raw, "MCF10A | Unadjusted VST", "radiation", "processing")
+p_mcf_adjusted <- pca_plot(mcf_adjusted, "MCF10A | Processing-adjusted VST", "radiation", "processing")
+p_mcf_both <- pca_plot(mcf_both, "MCF10A | Processing + run-adjusted VST", "radiation", "processing")
+
+## **** Summary table includes all datasets and all three variants.
+pca_variance <- do.call(rbind, lapply(list(
+  Global = list(unadjusted = raw_global, processing_adjusted = adj_global, processing_run_adjusted = both_global),
+  HT1080 = list(unadjusted = ht_raw, processing_adjusted = ht_adjusted, processing_run_adjusted = ht_both),
+  MCF10A = list(unadjusted = mcf_raw, processing_adjusted = mcf_adjusted, processing_run_adjusted = mcf_both)
+), function(variants) {
+  do.call(rbind, lapply(names(variants), function(label) {
+    v <- attr(variants[[label]], "pcvar")
+    data.frame(transformation = label, PC1 = v[1], PC2 = v[2])
+  }))
+}))
+pca_variance$cell_line <- rep(c("Global", "HT1080", "MCF10A"), each = 3)
+pca_variance <- pca_variance[, c("cell_line", "transformation", "PC1", "PC2")]
+utils::write.csv(pca_variance, file.path(table_dir, "PCA_variance.csv"), row.names = FALSE)
+```
+
+```{r mcf10a-pca-unadjusted-figure, fig.cap="MCF10A-only PCA using the 1,500 most variable genes within MCF10A, without processing adjustment. The four irradiation conditions are colored with the NPG palette and p21 genotype is encoded by point shape."}
+include_qc_figure(export_figure("PCA_MCF10A_unadjusted", p_mcf_raw, 9, 4.2))
+```
+
+```{r mcf10a-pca-adjusted-figure, fig.cap="MCF10A-only PCA after visual processing adjustment. The principal components are recalculated using the same selected genes; the processing effect is not removed from the counts used for DESeq2."}
+include_qc_figure(export_figure("PCA_MCF10A_processing_adjusted", p_mcf_adjusted, 9, 4.2))
+```
+
+```{r mcf10a-pca-both-figure, fig.cap="MCF10A-only PCA after jointly adjusting VST data for processing and sequencing run using limma. The biological group design is preserved and the same unadjusted-data gene set is used as in the other MCF10A PCAs."}
+include_qc_figure(export_figure("PCA_MCF10A_processing_run_adjusted", p_mcf_both, 9, 4.2))
+```
+
+**Interpretation (MCF10A).** Within MCF10A, the first two PCs explain **`r attr(mcf_raw, "pcvar")[1]`%** and **`r attr(mcf_raw, "pcvar")[2]`%** before adjustment, **`r attr(mcf_adjusted, "pcvar")[1]`%** and **`r attr(mcf_adjusted, "pcvar")[2]`%** after processing adjustment, and **`r attr(mcf_both, "pcvar")[1]`%** and **`r attr(mcf_both, "pcvar")[2]`%** after joint processing/run adjustment. The reduction in the **proportion** of variance assigned to PC1 indicates a redistribution of PCA variance, not a measured percentage of technical variation removed. The EKB control and UVB groups remain relatively compact and separated, whereas the UKD UVA and 7 Gy groups overlap more and show broader scatter. The additional run correction changes the geometry modestly but does not resolve this overlap. A notably separated UVA sample should be cross-checked with the within-group distance review (especially X80); point identity cannot be confirmed from this unlabeled PCA alone. The MCF10A WT UVA and 7 Gy contrasts remain particularly dependent on the additive batch assumption because the corresponding UKD WT controls were excluded. The comparison of DESeq2 models A and B is therefore more decisive than visual PCA separation.
+
+# Processing assessment in control samples
+
+**Methods.** The unirradiated controls provide the most direct view of differences between the two processing sites. We first examine a PCA restricted to controls, then compare mean VST expression between EKB and UKD within biological control groups represented at both sites.
+
+```{r controls-pca, fig.cap="PCA restricted to unirradiated control samples, colored by processing site and shaped by p21 genotype. Axes are fitted jointly across controls, and the same coordinate scale is displayed separately for HT1080 and MCF10A."}
+control_meta <- meta[meta$radiation == "control", , drop = FALSE]
+control_expr <- m[, control_meta$ID, drop = FALSE]
+control_scores <- pca_scores(control_expr, control_meta)
+p_control <- ggplot2::ggplot(control_scores,
+  ggplot2::aes(PC1, PC2, color = processing, shape = genotype)) +
+  ggplot2::geom_point(size = 3.0, alpha = 0.95) +
+  ggplot2::facet_wrap(~cell_line, nrow = 1, axes = "all", axis.labels = "all") +
+  ggplot2::scale_color_manual(values = processing_colors, name = "Processing") +
+  ggplot2::scale_shape_manual(values = genotype_shapes, name = "p21 status") +
+  ggplot2::labs(title = "Control samples | Processing and genotype",
+    x = sprintf("PC1: %.1f%% variance", attr(control_scores, "pcvar")[1]),
+    y = sprintf("PC2: %.1f%% variance", attr(control_scores, "pcvar")[2])) + p21_theme()
+include_qc_figure(export_figure("PCA_controls", p_control, 9, 4.2))
+```
+
+**Interpretation.** Restricting the PCA to controls does not remove the major difference between cell lines: PC1 alone accounts for **`r attr(control_scores, "pcvar")[1]`%** of variance, with a smaller PC2 contribution (**`r attr(control_scores, "pcvar")[2]`%**). Within HT1080, genotype- and processing-associated differences are visible but comparatively modest on the global control-only scale. For MCF10A, the lack of UKD WT controls prevents an unconfounded within-genotype processing comparison. The following direct EKB–UKD VST summaries are therefore restricted to control contexts represented in both processing groups.
+
+```{r processing-audit}
+## **** Descriptive EKB-UKD contrasts where both processing groups were observed.
+## Only sufficiently expressed QC genes are used; this does not alter the DE model.
+processing_audit <- lapply(unique(as.character(control_meta$cell_type)), function(ct) {
+  context <- control_meta[control_meta$cell_type == ct, , drop = FALSE]
+  if (!all(c("EKB", "UKD") %in% as.character(context$processing))) return(NULL)
+  ekb_mean <- rowMeans(control_expr[, context$ID[context$processing == "EKB"], drop = FALSE])
+  ukd_mean <- rowMeans(control_expr[, context$ID[context$processing == "UKD"], drop = FALSE])
+  effect <- ukd_mean - ekb_mean
+  data.frame(cell_type = ct, n_EKB = sum(context$processing == "EKB"),
+             n_UKD = sum(context$processing == "UKD"),
+             median_absolute_delta_VST = median(abs(effect)),
+             p90_absolute_delta_VST = unname(stats::quantile(abs(effect), 0.9)))
+})
+processing_audit <- do.call(rbind, processing_audit)
+if (!is.null(processing_audit)) {
+  utils::write.csv(processing_audit, file.path(table_dir, "processing_control_audit.csv"), row.names = FALSE)
+  knitr::kable(processing_audit, digits = 3, row.names = FALSE,
+               caption = "Descriptive processing differences in matched biological control contexts (expressed genes only).")
+}
+```
+
+**Interpretation.** Among the three control contexts represented in both processing groups, the median absolute EKB–UKD difference across expressed VST features ranges from **`r round(min(processing_audit$median_absolute_delta_VST), 3)` to `r round(max(processing_audit$median_absolute_delta_VST), 3)`**; the corresponding 90th percentiles range from **`r round(min(processing_audit$p90_absolute_delta_VST), 3)` to `r round(max(processing_audit$p90_absolute_delta_VST), 3)`**. These descriptive values suggest that the central distribution of control differences is not extreme, but a subset of genes can differ more substantially. The estimates do not demonstrate that technical effects are exactly identical across cell lines and p21 genotypes. As agreed, the DESeq2 model assumes a common additive processing coefficient. The absence of UKD MCF10A WT controls prevents direct evaluation of that assumption for this subgroup.
+
+# Overall QC assessment and next steps
+
+**Overall assessment.** The 91 retained samples show plausible RNA-seq QC metrics, a strong cell-line signal, and distinguishable within-line expression patterns. Processing-only and combined processing/run adjustments cause some rearrangement within HT1080 and MCF10A but leave the principal group structure visible. This is useful as an exploratory robustness observation; it is **not** proof that biological effects have been separated from batch, because the correction preserves the defined biological groups and several treatment groups occur at only one processing site. The present QC provides no automatic reason to remove additional samples. The most distant within-group candidate (`r review$ID[1]`) should still be reviewed individually. To assess the practical impact of sequencing run on our scientific conclusions, the next DE analysis will compare a processing-only model to the processing-plus-run model on the original endogenous counts.
+
+**Next step.** Compare the 12 irradiation-versus-control contrasts between Model A (`~ processing + group`) and Model B (`~ processing + sequencing_run + group`) using **BH-adjusted `padj < 0.05`** without a required log2FC cutoff. Compare log2FC estimates, standard errors, DEGs and biological signatures to the historical analysis before choosing the final primary model. All batch-adjusted VST data in this report are for **exploratory QC only**; statistical DE uses the original endogenous count data.
+
+
+# Session information
+
+```{r session-info}
+## **** Reproducibility: complete R version, platform and loaded package versions.
+print(utils::sessionInfo())
+```

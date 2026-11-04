@@ -1,0 +1,546 @@
+---
+title: "p21 irradiation response | Analysis report"
+subtitle: "Irradiation-response architecture and p21-dependent transcriptional regulation in HT1080 and MCF10A"
+author: "Laboratory for Molecular Cell Biology"
+date: "`r format(Sys.Date(), '%d %B %Y')`"
+output:
+  pdf_document:
+    toc: true
+    toc_depth: 2
+    number_sections: true
+    fig_caption: true
+    latex_engine: pdflatex
+  html_document:
+    toc: true
+    toc_depth: 2
+    number_sections: true
+    fig_caption: true
+  word_document:
+    toc: true
+    toc_depth: 2
+    number_sections: true
+    fig_caption: true
+params:
+  strict_inputs: true
+  module_heatmap_style: "paired"  # "paired" or "original"; exactly one is shown
+  show_cluster_evaluation: true  # displays exported silhouette/ARI, clustree and module PCA
+  show_L2_explanation: true  # show the explanatory L2-normalization schematic
+  show_go_network: false  # optional alternative visualization, dotplot remains primary
+  show_dream_gsea_panels: true  # six-context DREAM enrichment/leading-edge figure
+fontsize: 10pt
+geometry: margin=2.1cm
+header-includes:
+  - \usepackage{float}
+  - \usepackage{booktabs}
+  - \usepackage{placeins}
+  - \usepackage{pdflscape}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = FALSE, warning = FALSE, message = FALSE,
+  fig.align = "center", out.width = "96%", fig.pos = "H"
+)
+
+# Strict reporting layer. All statistics and plotted results already exist.
+if (!requireNamespace("here", quietly = TRUE)) stop("Install R package 'here'.")
+here::i_am("R/03_response_architecture.R")
+root <- here::here()
+if (!file.exists(here::here("p21.Rproj"))) {
+  stop("Open p21.Rproj before knitting (project root not detected).")
+}
+if (!params$module_heatmap_style %in% c("paired", "original")) {
+  stop("module_heatmap_style must be 'paired' or 'original'.")
+}
+
+# All paths are project-root-relative and verified against p21_repo.txt.
+figures <- list(
+  response_pca = c("Results", "03_response_architecture", "01_PCA",
+                   "PCA_all_expressed_PC1_PC2.png"),
+  primary_counts = c("Results", "02_primary_DE", "01_PRIMARY_model_A",
+                     "figures", "DEG_counts_by_condition.png"),
+  primary_ht1080 = c("Results", "02_primary_DE", "01_PRIMARY_model_A",
+                     "figures", "irradiation_volcano_HT1080_6panel.png"),
+  primary_mcf10a = c("Results", "02_primary_DE", "01_PRIMARY_model_A",
+                     "figures", "irradiation_volcano_MCF10A_6panel.png"),
+  interaction_counts = c("Results", "04_p21_interactions", "figures",
+                         "p21_interaction_counts.png"),
+  interaction_atlas = c("Results", "04_p21_interactions", "figures",
+                        "p21_interaction_volcano_atlas.png"),
+  module_method = c("Results", "03_response_architecture", "02_MODULE_L2",
+                     "kmeans_module_workflow.png"),
+  l2_explanation = c("Results", "03_response_architecture", "02_MODULE_L2",
+                     "L2_normalisation.png"),
+  cluster_pca = c("Results", "03_response_architecture", "02_MODULE_L2", "k_evaluation",
+                  "k8_gene_profile_PCA.png"),
+  cluster_metrics = c("Results", "03_response_architecture", "02_MODULE_L2", "k_evaluation",
+                      "k_selection_metrics.png"),
+  cluster_resolution = c("Results", "03_response_architecture", "02_MODULE_L2", "k_evaluation",
+                         "k_clustree_all.png"),
+  module_pairs = c("Results", "03_response_architecture", "02_MODULE_L2",
+                   "module_mean_response_heatmap_ordered.png"),
+  module_original = c("Results", "03_response_architecture", "02_MODULE_L2",
+                      "module_mean_response_heatmap_header.png"),
+  module_genes = c("Results", "03_response_architecture", "02_MODULE_L2",
+                   "representative_gene_heatmap_3per_module.png"),
+  irradiation_concordance = c("Results", "04_p21_interactions", "figures",
+                              "p21_7Gy_UVA_interaction_concordance.png"),
+  module_go_panels = c("Results", "03_response_architecture", "02_MODULE_L2",
+                       "module_GO_BP_dotplot_theme_pies.png"),
+  module_go_dotplot = c("Results", "03_response_architecture", "02_MODULE_L2",
+                        "module_GO_BP_dotplot.png"),
+  module_go_network = c("Results", "03_response_architecture", "02_MODULE_L2",
+                        "module_GO_BP_network.png"),
+  ipa_upstream = c("Results", "08_IPA_visualisations", "figures",
+                   "IPA_upstream_regulators_interactions.png"),
+  ipa_functions = c("Results", "08_IPA_visualisations", "figures",
+                    "IPA_functions_interactions.png"),
+  dream_nes = c("Results", "09_DREAM_analysis", "figures",
+                "DREAM_interaction_NES_heatmap.png"),
+  dream_six = c("Results", "09_DREAM_analysis", "figures",
+                "DREAM_GSEA_six_contexts.png")
+)
+
+# Established figures are valid fallbacks when only --evaluate-clusters was run.
+# All candidates are explicitly defined (no recursive filename guessing).
+figure_fallbacks <- list(
+  module_pairs = list(c("Results", "05_module_integration", "figures", "module_response_pairs.png")),
+  module_original = list(c("Results", "03_response_architecture", "02_MODULE_L2",
+                           "module_mean_response_heatmap.png")),
+  module_genes = list(c("Results", "03_response_architecture", "02_MODULE_L2",
+                        "representative_gene_heatmap.png"))
+)
+
+figure_candidates <- function(key) {
+  first <- figures[[key]]
+  if (is.null(first)) stop("Unrecognized report figure: ", key)
+  c(list(first), figure_fallbacks[[key]])
+}
+
+figure_path <- function(key) {
+  candidates <- figure_candidates(key)
+  paths <- vapply(candidates, function(parts) do.call(here::here, as.list(parts)), character(1))
+  existing <- which(file.exists(paths))
+  if (length(existing)) {
+    return(normalizePath(paths[existing[1]], winslash = "/", mustWork = TRUE))
+  }
+  if (isTRUE(params$strict_inputs)) {
+    detail <- paste(sprintf("  - %s", paths), collapse = "\n")
+    if (key %in% c("module_pairs", "module_original", "module_genes",
+                   "module_go_panels", "module_go_dotplot", "module_go_network")) {
+      detail <- paste0(detail, "\nTo produce updated module figures run from the project root:\n",
+                       "  Rscript R/03_response_architecture.R --figures-only")
+    }
+    if (key %in% c("ipa_upstream", "ipa_functions")) {
+      detail <- paste0(detail, "\nGenerate IPA heatmaps first in RStudio:\n",
+                       "  source(\"R/08_IPA_upstream_heatmap.R\")")
+    }
+    if (key %in% c("dream_nes", "dream_six")) {
+      detail <- paste0(detail, "\nGenerate DREAM figures from the project root:\n",
+                       "  Rscript R/09_DREAM_analysis.R")
+    }
+    if (key %in% c("cluster_metrics", "cluster_resolution", "cluster_pca")) {
+      detail <- paste0(detail, "\nGenerate the cluster-number evaluation:\n",
+                       "  Rscript R/03_response_architecture.R --evaluate-clusters")
+    }
+    stop("Missing figure (", key, "). Checked:\n", detail)
+  }
+  NULL
+}
+
+show_figure <- function(key) {
+  path <- figure_path(key)
+  if (is.null(path)) {
+    return(knitr::asis_output(paste0("*Missing figure: `",
+      paste(figures[[key]], collapse = "/"), "`.*\n\n")))
+  }
+  knitr::include_graphics(path, rel_path = FALSE)
+}
+
+read_module_key <- function() {
+  mod_dir <- here::here("Results", "03_response_architecture", "02_MODULE_L2")
+  labels_path <- file.path(mod_dir, "module_descriptive_labels.csv")
+  genes_path <- file.path(mod_dir, "representative_genes_with_selection_reason.csv")
+  if (!all(file.exists(c(labels_path, genes_path)))) {
+    if (isTRUE(params$strict_inputs)) stop("Module annotation CSVs are missing.")
+    return(NULL)
+  }
+  info <- utils::read.csv(labels_path, stringsAsFactors = FALSE)
+  genes <- utils::read.csv(genes_path, stringsAsFactors = FALSE)
+  needed_info <- c("module", "descriptive_pattern", "n_genes")
+  needed_genes <- c("module", "SYMBOL", "ENSEMBL", "selection_reason")
+  if (!all(needed_info %in% names(info)) || !all(needed_genes %in% names(genes))) {
+    stop("Unexpected module annotation table structure.")
+  }
+  info <- info[order(info$module), , drop = FALSE]
+  # Only display labels already selected upstream; no reselection or clustering.
+  key <- lapply(seq_len(nrow(info)), function(i) {
+    module_id <- info$module[i]
+    x <- genes[genes$module == module_id, , drop = FALSE]
+    x$label <- ifelse(!is.na(x$SYMBOL) & nzchar(x$SYMBOL), x$SYMBOL, x$ENSEMBL)
+    pattern <- x$label[x$selection_reason == "pattern_representative"]
+    biological <- x$label[x$selection_reason != "pattern_representative"]
+    data.frame(
+      Module = module_id,
+      `Descriptive pattern` = info$descriptive_pattern[i],
+      `Pattern examples` = paste(head(pattern, 3), collapse = ", "),
+      `Annotated examples` = paste(head(biological, 3), collapse = ", "),
+      check.names = FALSE)
+  })
+  do.call(rbind, key)
+}
+```
+
+
+# Scope and analysis strategy
+
+This report examines two connected questions: (i) how ionizing radiation (7 Gy), UVA and UVB shape transcriptional responses in HT1080 and MCF10A cells across WT and p21-deficient backgrounds; and (ii) which components of these irradiation responses are significantly altered by p21 loss. We first characterize the twelve within-genotype irradiation-versus-control responses, including shared gene-response modules and their GO Biological Process (GO-BP) enrichment. We then examine the six formal p21-by-irradiation interactions and use IPA to explore associated regulatory and functional predictions. Finally, a targeted DREAM analysis tests whether these interaction signatures converge on an established cell-cycle repressor program and whether DREAM-associated repression persists after p21 loss.
+
+Following the documented exclusion of five UKD-processed MCF10A WT control samples, the primary analysis includes 91 biological samples. The primary DESeq2 model is `~ processing + group` (`group = cell_line × genotype × radiation`). Experimental QC, processing and sensitivity checks are documented in the preceding analyses. All numerical results and figures are generated upstream; this report embeds the exported results without refitting statistical models or repeating enrichment analyses.
+
+The interaction estimate for radiation quality *q* and cell line *c* is
+
+\[
+\Delta_{p21}^{(q,c)} =
+(\mathrm{KO}_{q,c}-\mathrm{KO}_{control,c})
+- (\mathrm{WT}_{q,c}-\mathrm{WT}_{control,c}).
+\]
+
+A positive interaction denotes a more positive irradiation-associated log2FC in KO, potentially including weaker repression, but does not necessarily imply higher absolute gene expression. Unless noted otherwise, significance of individual DESeq2 interactions refers to BH-adjusted Wald *p* < 0.05, without an additional fold-change threshold. HT1080 is a malignant fibrosarcoma model; MCF10A is a non-tumorigenic mammary epithelial model, not a direct surrogate for healthy breast tissue in vivo.
+
+# Irradiation-induced transcriptional responses
+
+## Global organization of the twelve responses
+
+**Methods.** We compared the overall transcriptional response to each irradiation condition using a PCA of the twelve WT- and p21-KO irradiation-versus-control profiles. Each point represents a transcriptional response, not an individual biological sample. The analysis includes all adequately expressed genes (at least 10 normalized counts in five samples) and uses ashr-shrunken log2FC estimates; genes are centered but not variance-scaled.
+
+```{r fig-response-pca, fig.cap="PCA of all adequately expressed genes across the twelve irradiation-versus-control contrasts. Points represent genotype-specific irradiation effects; arrows connect WT and p21 KO within cell line and exposure."}
+show_figure("response_pca")
+```
+
+**Interpretation.** The response profiles separate by irradiation condition and cellular background, illustrating how differently the two cell lines respond to DNA-damaging exposures. Arrows connecting WT and KO show where loss of p21 changes the overall response pattern. This first comparison is descriptive; the formal interaction analysis below identifies which transcriptional differences are associated with p21 loss.
+
+## Magnitude and direction of irradiation responses
+
+**Methods.** For each genotype and irradiation condition, we counted significantly induced and repressed genes (BH FDR < 0.05, no minimum log2FC threshold).
+
+```{r fig-primary-counts, fig.cap="Numbers of significantly induced and repressed genes across twelve irradiation-versus-control contrasts (DESeq2 Model A; BH FDR < 0.05)."}
+show_figure("primary_counts")
+```
+
+**Interpretation.** Irradiation produces transcriptional responses of markedly different sizes and directions across cell lines and genotypes. The number of responsive genes provides a useful overview of these differences, while the interaction contrasts presented later establish which response changes are specifically associated with p21 deficiency.
+
+## Irradiation-response volcano plots: HT1080
+
+**Methods.** The volcano plots display irradiation-induced gene-expression changes in WT (upper row) and p21 KO (lower row), across the three radiation types. Red indicates induction, blue repression and grey no significant change (BH FDR < 0.05, without an additional log2FC threshold).
+
+```{r fig-primary-ht1080, fig.cap="HT1080: six irradiation-versus-control volcano plots (WT upper row, p21 KO lower row; ionizing radiation, UVA and UVB).", out.width="100%"}
+show_figure("primary_ht1080")
+```
+
+**Interpretation.** The HT1080 panels illustrate that irradiation induces broad transcriptional programs in both genotypes, with clear changes in the balance of induction and repression after p21 loss. These differences motivate the formal interaction analysis, particularly for genes involved in DNA replication and cell-cycle progression.
+
+## Irradiation-response volcano plots: MCF10A
+
+```{r fig-primary-mcf10a, fig.cap="MCF10A: six irradiation-versus-control volcano plots (WT upper row, p21 KO lower row; ionizing radiation, UVA and UVB). Unshrunken Wald effects are shown in the volcano plots.", out.width="100%"}
+show_figure("primary_mcf10a")
+```
+
+**Interpretation.** MCF10A shows its own irradiation-response patterns rather than simply mirroring HT1080. The differences between WT and KO already suggest that p21 loss may affect cell-cycle and stress-response regulation differently in the two cellular backgrounds.
+
+**Processing context.** UVB and ionizing radiation/UVA were predominantly associated with different processing contexts (EKB and UKD). The model adjusts for additive processing effects, and processing-matched checks supported within-quality responses where estimable. Because irradiation quality and processing were not fully crossed, direct comparisons between radiation types remain more difficult to interpret.
+
+# Transcriptional response architecture across twelve irradiation contrasts
+
+## From response profiles to k-means modules
+
+**Methods.** The preceding PCA revealed differences in the overall transcriptional responses between irradiation conditions, cell lines and p21 genotypes. We next asked whether individual genes follow similar response patterns across these conditions, potentially revealing coordinated transcriptional programs. For this analysis, we selected genes with BH-adjusted *p* < 0.05 in at least one irradiation-versus-control contrast (DEG union), retaining those with complete, nonzero response profiles. Each gene was represented by twelve ashr-shrunken log2FC estimates.
+
+Clustering these profiles directly would give greater weight to genes with large response magnitudes, even when weaker-responding genes follow essentially the same pattern. To identify genes with similar response patterns independently of their overall response strength, we first normalized each twelve-value vector by its Euclidean length (L2 norm). This gives every gene profile a length of 1 while preserving its relative pattern across conditions. The subsequent k-means clustering therefore groups genes primarily by how they respond across conditions rather than simply by how strongly they respond.
+
+For an illustrative three-condition example, the vectors $(1, 2, -2)$ and $(2, 4, -4)$ have lengths $\sqrt{1^2+2^2+(-2)^2}=3$ and $\sqrt{2^2+4^2+(-4)^2}=6$. After dividing each component by its respective length, both vectors become $(0.33, 0.67, -0.67)$. This principle is illustrated in the accompanying normalization schematic; the actual analysis uses twelve values per gene.
+
+```{r fig-l2-explanation, fig.cap="Schematic explanation of gene-wise L2 normalization: profiles with proportional changes but different magnitudes become identical unit-length vectors. Numerical values are illustrative (three conditions); the actual analysis uses twelve original ashr log2FC values per gene.", out.width="100%"}
+if (isTRUE(params$show_L2_explanation)) show_figure("l2_explanation")
+```
+
+Clustering the response profiles. We applied Euclidean k-means to the twelve-dimensional L2-normalized profiles (40 random starts, 150 maximum iterations, seed 21). The accompanying workflow schematic illustrates the procedure using eight groups to explain the steps; the choice of eight modules is evaluated separately (Figs. 7 and 8). Lines in the schematic are a visual aid: k-means uses all twelve values directly. Once genes have been assigned, their biological responses are shown using the original ashr log2FC, not the L2-normalized values.
+
+```{r fig-module-method, fig.cap="Schematic overview of radiation-response module identification. Each gene's twelve-component response is normalized, genes with similar response patterns are grouped by k-means, and their original treatment effects are displayed in module and representative-gene heatmaps. Schematic values are illustrative.", out.width="95%"}
+show_figure("module_method")
+```
+
+Selecting the number of modules. We compared $k=4$ to $12$ to find a clustering resolution that distinguishes different response patterns without losing reproducibility. We evaluated two complementary properties (Fig. 7). The silhouette score measures how clearly genes are separated into groups; higher values indicate better separation. The adjusted Rand index (ARI) measures whether genes remain grouped similarly after re-clustering random 80% subsets; values near 1 indicate stable assignments. Silhouette scores were calculated on three fixed samples of approximately 1,500 genes, and ARI on eight independent subsampled fits per candidate $k$.
+
+```{r fig-k-quality, fig.cap="Cluster-number evaluation: silhouette-based separation and gene-subsampling ARI stability for k = 4-12 (mean and SD). Higher silhouette and ARI indicate better separation and greater consistency, respectively; the dashed line marks k = 8.", out.width="100%"}
+if (isTRUE(params$show_cluster_evaluation)) show_figure("cluster_metrics")
+```
+
+**Interpretation.** The smaller solutions group genes reproducibly but combine several visibly different response patterns. As the number of modules increases, stability remains high through eight modules, whereas separation drops more noticeably beyond this point (Fig. 7). Eight modules therefore appear to offer a useful balance: enough groups to describe the range of irradiation responses, without dividing the genes into increasingly poorly separated clusters. Importantly, the stability result alone does not tell us whether each additional module represents a meaningfully different pattern; this is examined in the gene-overlap analysis (Fig. 8).
+
+Assessing the value of additional modules. We next examined how the gene groups change when the chosen number of modules increases from four to twelve (Fig. 8). Each circle represents one group, with larger circles containing more genes. Connecting lines show how genes from one solution are distributed across groups in the next solution; thicker lines indicate greater overlap. This makes it possible to see where a broad response pattern separates into more specific patterns, even though the underlying k-means solutions were fitted independently rather than hierarchically.
+
+To determine whether these subdivisions add meaningful information, we focused on the transitions from six to seven and from seven to eight modules. For each transition, we matched groups by their shared genes and compared the average response profiles of the two groups emerging from the main split. Their cosine similarity, shown at the relevant branch points (Fig. 8), describes how similarly the two new groups respond across all twelve conditions: values close to 1 indicate nearly identical patterns, while lower values indicate more distinct patterns.
+
+```{r fig-k-resolution, fig.cap="Gene-overlap clustering tree across k = 4-12. Nodes show gene clusters (size proportional to gene count); edges show shared genes. Numbers at major branch points are cosine similarities between the two resulting cluster profiles in twelve-dimensional L2-normalized space. The k = 6-to-7 and k = 7-to-8 subdivisions are highlighted. Independent k-means solutions are connected by gene overlap, not hierarchical clustering.", out.width="100%"}
+if (isTRUE(params$show_cluster_evaluation)) show_figure("cluster_resolution")
+```
+
+**Interpretation.** The two key splits produce response profiles with cosine similarities of about 0.28 and 0.53 (Fig. 8). These values are well below 1, meaning that the new groups do not merely repeat the same pattern at a finer resolution. The transition from seven to eight modules is particularly informative: it separates two UVB-repression patterns that emphasize different cell lines, later labelled M05 (HT1080-associated) and M07 (MCF10A-associated). At seven modules, these responses would have remained combined. Together with the high clustering stability (Fig. 7; mean ARI = 0.951 at k = 8), this supports the choice of eight biologically informative response modules.
+
+Selection of eight modules. Taken together, the separation and stability evaluation (Fig. 7) and the gene-overlap analysis (Fig. 8) favor k = 8. This solution preserves reproducible group membership while keeping distinct irradiation-response patterns separate. The resulting modules and their biological characteristics are examined below.
+
+To visualize the final solution, we projected the L2-normalized profiles of all 13,187 clustered genes into two dimensions using PCA (Fig. 9). Each point is one gene, colored by its module assignment. This gives an overview of how the eight groups are arranged relative to one another, while the actual clustering uses all twelve conditions rather than only the two PCA axes.
+
+```{r fig-cluster-pca, fig.cap="PCA of 13,187 L2-normalized twelve-condition gene profiles, colored by the eight selected modules. Each point represents a gene and labels identify modules. PCA provides a two-dimensional overview; clustering was performed using all twelve response values.", out.width="100%"}
+if (isTRUE(params$show_cluster_evaluation)) show_figure("cluster_pca")
+```
+
+**Interpretation.** Genes assigned to modules with opposing induction and repression patterns tend to occupy different regions of the PCA (Fig. 9). Some groups overlap in this two-dimensional view, as expected when twelve response measurements are condensed to two axes. The figure therefore illustrates the overall structure of the eight-module solution rather than providing an additional cluster-quality test. The original irradiation effects that define each module are easier to interpret in the response heatmap (Fig. 10).
+
+Full k-selection metrics, module membership tables and overlap audits are available in the accompanying analysis outputs.
+
+## Twelve-condition profiles of the eight modules
+
+**Methods.** The eight modules are displayed as four pairs of contrasting response patterns (Fig. 10). Each heatmap cell contains the mean irradiation-induced log2FC of the genes belonging to that module, calculated from their original ashr-shrunken effects. Red indicates average induction and blue average repression. The descriptive module names indicate where each pattern is most pronounced, not that a module responds exclusively in one cell line or to one irradiation type.
+
+```{r module-response-landscape-start, results='asis'}
+if (knitr::is_latex_output()) {
+  cat("\\clearpage\n\\begin{landscape}\n")
+}
+```
+
+```{r fig-module-response, fig.cap="Mean irradiation-induced gene-expression responses across the eight selected modules. Each value is the mean original ashr log2FC of all genes in that module. The four paired patterns highlight different cellular and irradiation contexts; red indicates induction and blue repression.", out.width="98%", fig.pos="H"}
+show_figure(if (params$module_heatmap_style == "paired") "module_pairs" else "module_original")
+```
+
+```{r module-response-landscape-end, results='asis'}
+if (knitr::is_latex_output()) {
+  cat("\\end{landscape}\n\\clearpage\n")
+}
+```
+
+**Module composition.** The following table reports how many of the 13,187 clustered genes belong to each module. Gene counts are derived from the module assignments generated by the upstream clustering analysis, rather than estimated from the heatmap. The proportions describe module sizes, not the strength of their irradiation responses.
+
+```{r module-composition-table, results='asis'}
+module_info_path <- here::here("Results", "03_response_architecture", "02_MODULE_L2",
+                               "module_descriptive_labels.csv")
+if (!file.exists(module_info_path)) {
+  if (isTRUE(params$strict_inputs)) {
+    stop("Missing module_descriptive_labels.csv for module composition table. ",
+         "Generate the upstream module outputs before knitting.")
+  }
+  cat("Module composition table is unavailable: upstream module annotation was not found.\n\n")
+} else {
+  module_info <- utils::read.csv(module_info_path, stringsAsFactors = FALSE)
+  required <- c("module", "descriptive_pattern", "n_genes")
+  if (!all(required %in% names(module_info))) {
+    stop("Module annotation table lacks: ",
+         paste(setdiff(required, names(module_info)), collapse = ", "))
+  }
+  module_info <- module_info[match(sprintf("M%02d", 1:8), module_info$module), , drop = FALSE]
+  if (anyNA(module_info$module) || anyDuplicated(module_info$module) ||
+      anyNA(module_info$n_genes) || any(module_info$n_genes < 0)) {
+    stop("Incomplete or invalid module size information.")
+  }
+  module_info$n_genes <- as.integer(module_info$n_genes)
+  module_total <- sum(module_info$n_genes)
+  if (module_total != 13187L) {
+    stop("Module sizes total ", module_total,
+         " genes, but the report describes 13,187 clustered genes. Reconcile outputs.")
+  }
+  module_comp <- data.frame(
+    Module = c(module_info$module, "Total"),
+    `Characteristic response` = c(module_info$descriptive_pattern, "All modules"),
+    `Genes (n)` = c(format(module_info$n_genes, big.mark = ",", trim = TRUE),
+                    format(module_total, big.mark = ",", trim = TRUE)),
+    `Share (%)` = c(sprintf("%.1f", 100 * module_info$n_genes / module_total), "100.0"),
+    check.names = FALSE)
+  cat(as.character(knitr::kable(
+    module_comp, format = "pipe", row.names = FALSE,
+    caption = "Composition of the eight irradiation-response modules (k = 8).")),
+    sep = "\n")
+  cat("\n\n")
+}
+```
+
+**Interpretation.** The mean-response heatmap reveals four pairs of opposing transcriptional responses (Fig. 10), each with a different emphasis. M01 and M08 capture the strongest induction and repression patterns in HT1080 after UVA (mean log2FC +0.64 and -0.56 in WT). The same genes respond to ionizing radiation and UVB, but less strongly on average, indicating a broader HT1080 response with a pronounced UVA component.
+
+M02 and M06 are most prominent in MCF10A after ionizing radiation and UVA. They show substantial induction (M02: +0.59 and +0.61 in WT) and repression (M06: -0.41 and -0.47 in WT), respectively, but much weaker responses in HT1080. M03 and M05 capture a different pattern centered on HT1080 after UVB: pronounced induction in M03 (+0.85 in WT) is accompanied by strong repression in M05 (-0.58 in WT). In contrast, M04 and M07 are particularly characteristic of MCF10A after UVB, where one gene group is induced (+0.54 in WT) and the other repressed (-0.42 in WT).
+
+These patterns illustrate why the eight-module solution is informative: genes are not simply divided into universally induced or universally repressed groups. Instead, the modules distinguish which cell line and irradiation quality produce the strongest response. Differences between WT and p21 KO are also visible, such as weaker M08 repression after UVA in HT1080 and stronger M04 induction and M07 repression after UVB in MCF10A. At this stage, however, the modules describe the overall response architecture; we examine the specific contribution of p21 formally in Section 5.
+
+## Representative genes within each module
+
+**Methods.** We show three biologically interpretable genes per module (24 genes), selected using module-profile similarity (`profile_cosine`), response magnitude and biological informativeness. These are representative examples, not a new significance ranking or separate statistical tests. Module pairs are ordered as M01/M08, M02/M06, M03/M05 and M04/M07. 
+
+```{r fig-representative-gene-heatmap, fig.cap="Representative gene responses across eight modules, arranged in opposing pairs (original twelve-condition ashr-shrunken log2FC).", out.width="98%"}
+show_figure("module_genes")
+```
+
+**Interpretation.** The representative genes illustrate the different transcriptional behaviors captured by each module and connect the broad response patterns to recognizable biological functions. The heatmap shows the original ashr-shrunken effects, not L2-normalized values; gene examples illustrate the modules rather than providing an additional test of p21 dependence.
+
+# Biological characterization of irradiation-response modules
+
+**Methods.** We used significant GO Biological Process terms to identify which functions are represented within each response module. Related terms were consolidated using Wang semantic similarity to reduce redundancy. The figure shows representative GO terms on the left and the broader composition of functionally grouped, nonredundant terms on the right. These exploratory categories describe GO terms, not proportions of genes or measured pathway activity.
+
+```{r fig-module-go-panels, fig.cap="Biological characterization of irradiation-response modules. Panel A: GO Biological Process enrichment of representatives drawn from leading functional themes per module; symbol size reflects gene ratio, color indicates adjusted enrichment significance (FDR < 0.05). Panel B: thematic composition of all FDR-significant GO-BP terms after within-module semantic redundancy reduction. Slice fractions count GO terms, not genes or signaling activity; themes are manually defined and exploratory. M03 has no FDR-significant GO-BP term.", out.width="100%"}
+show_figure("module_go_panels")
+```
+
+**Interpretation.** The eight response modules represent different biological themes rather than one universal irradiation program. M08 is particularly relevant to the later p21 analysis because it is enriched for cell-cycle and chromosome-related functions. Other modules highlight autophagy/vesicular processes (M01), inflammatory and remodeling programs (M02), mitochondrial functions (M06), sterol metabolism and cell adhesion (M05), cytoskeletal organization (M04) and cilia (M07). M03 had no significant GO-BP term under the applied criterion. The table summarizes the most frequently represented theme in each module; mixed annotations are intentionally kept distinct from modules with one predominant theme.
+
+```{r module-go-theme-summary, results='asis'}
+path <- here::here("Results", "03_response_architecture", "02_MODULE_L2",
+                   "GO_BP_module_dominant_themes.csv")
+if (!file.exists(path)) {
+  if (isTRUE(params$strict_inputs)) stop("Missing GO theme summary: ", path,
+    ". Run the updated R/03_response_architecture.R full workflow.")
+  cat("GO thematic summary not yet generated.\n")
+} else {
+  x <- utils::read.csv(path, stringsAsFactors = FALSE)
+  x <- x[match(sprintf("M%02d", 1:8), x$module), ]
+  if (anyNA(x$module)) stop("Missing module in GO thematic summary")
+  x$share <- ifelse(is.finite(x$fraction_percent),
+                    sprintf("%.0f%%", x$fraction_percent), "-")
+  x$dominant_theme[x$n_reduced_terms == 0L] <- "No FDR-significant GO-BP terms"
+  table <- data.frame(Module = x$module,
+    `Reduced GO terms` = x$n_reduced_terms,
+    `Most frequent category` = x$dominant_theme,
+    `Share of terms` = x$share,
+    `Interpretation` = x$status, check.names = FALSE)
+  print(knitr::kable(table, format = "pipe", row.names = FALSE))
+}
+```
+
+```{r fig-module-go-network, fig.cap="Optional network of significant associations between the selected GO-BP representatives and the eight modules (FDR < 0.05); no causal inference is implied.", out.width="100%"}
+if (isTRUE(params$show_go_network)) show_figure("module_go_network")
+```
+
+# p21-dependent changes in irradiation responses
+
+The first part of the report described how the two cell lines respond to irradiation and organized the responses into eight recurring gene-expression patterns. Several of these patterns differ between WT and p21 KO, raising a more focused question: which irradiation-induced changes actually depend on p21? To answer this, we now compare the irradiation response directly between genotypes within each cell line and radiation quality (Fig. 13 and Fig. 14). This distinguishes changes specifically associated with p21 loss from the broader response to irradiation itself.
+
+## Six formal interaction contrasts
+
+**Methods.** We compared the response to each radiation type directly between WT and p21 KO using six processing-adjusted genotype-by-irradiation contrasts. This tests whether a gene responds differently to irradiation when p21 is absent, rather than simply comparing the number of significant genes in WT and KO. A positive interaction can indicate weaker repression in KO; a negative interaction can indicate stronger repression in KO.
+
+```{r fig-interaction-counts, fig.cap="Number of genes with significant p21-by-irradiation interactions. Red: more positive irradiation response in p21 KO; blue: more negative irradiation response in p21 KO (FDR < 0.05)."}
+show_figure("interaction_counts")
+```
+
+```{r fig-p21-interaction-volcano, fig.cap="Six formal p21 interaction contrasts. Red: higher irradiation-associated response log2FC in p21 KO; blue: higher response log2FC in WT; grey: no significant interaction. These colors do not directly compare absolute expression levels.", out.width="100%"}
+show_figure("interaction_atlas")
+```
+
+**Interpretation.** HT1080 shows its strongest p21-dependent transcriptional changes after UVA exposure. Several prominent cell-cycle and DNA-replication genes, including MCM2, MCM7, KIF11, KNL1 and FOXM1, respond less negatively in KO than in WT. This suggests that p21 is important for suppressing proliferation-associated gene expression after irradiation in HT1080. MCF10A behaves differently, with more negative interaction responses in several conditions. Thus, p21 loss does not uniformly release cell-cycle-related transcription across the two cell lines.
+
+## Across-quality concordance of p21 interactions
+
+**Methods.** We compared the p21-interaction effects after ionizing radiation and UVA within each cell line to assess whether the same genes are affected in a similar direction (Fig. 15). These two radiation types were selected for this focused comparison because they share the more comparable processing context in this dataset. UVB samples were predominantly processed separately, so including UVB in this direct concordance plot would make technical and radiation-quality differences harder to disentangle. UVB is nevertheless included in the genome-wide irradiation-response analysis and all six formal p21 interaction contrasts.
+
+```{r fig-irradiation-concordance, fig.cap="Comparison of ionizing radiation and UVA p21-interaction estimates within HT1080 and MCF10A. Concordance is descriptive, not a formal test of radiation-quality differences."}
+show_figure("irradiation_concordance")
+```
+
+**Interpretation.** Genes with similar interaction effects after ionizing radiation and UVA fall near the diagonal (Fig. 15), suggesting that part of the p21-dependent transcriptional response is shared between these exposures. Genes farther from the diagonal respond differently, illustrating radiation-context-specific effects. The figure compares patterns rather than formally testing differences between radiation qualities, which would be complicated by the incomplete crossing of radiation type and processing.
+
+# Regulatory and functional predictions associated with p21 loss (IPA)
+
+The interaction analysis identifies genes whose response to irradiation changes after p21 loss. We next asked what regulatory signals might explain these changes and what they could mean for cell behavior. IPA Comparison Analysis provides a knowledge-based interpretation of the same six p21-interaction profiles, connecting the observed transcriptomic changes to candidate upstream regulators and biological functions.
+
+## Upstream regulators: context-dependent signatures
+
+**Methods.** IPA Upstream Regulator Analysis compares the direction of the observed expression changes with published relationships between potential regulators and their downstream target genes. For example, if genes normally activated by E2F1 show more positive irradiation responses in p21 KO, while genes normally suppressed by E2F1 shift in the opposite direction, IPA may predict increased E2F1 activity in the KO-related response. The activation z-score summarizes how well the observed directions agree with expected activation or inhibition: positive scores suggest activation and negative scores suggest inhibition relative to the WT irradiation response. The prediction does not require the regulator itself to be differentially expressed.
+
+IPA also calculates target-overlap significance, which asks whether a regulator's known targets are represented more often than expected among the input genes. This is distinct from the directional activation z-score; the source comparisons contain BH-adjusted overlap values. For the upstream-regulator heatmap (Fig. 16), we selected hypothesis-relevant regulators spanning cell-cycle control, growth-factor signaling and stress responses to compare their predicted activity across the six contexts. The heatmap is a targeted overview, not an unbiased ranking of all IPA regulators.
+
+```{r fig-ipa-upstream, fig.cap="IPA Upstream Regulator activation z-scores for six formal p21-by-irradiation interaction contrasts (KO minus WT). Selected hypothesis-relevant regulators span the p53/p21–RB/E2F axis, growth-factor signaling and stress/metabolic regulators. Row clustering is exploratory; colors encode predictions, not measured regulator expression.", out.width="53%"}
+show_figure("ipa_upstream")
+```
+
+**Interpretation.** The strongest HT1080 UVA pattern points toward reduced RB-associated control and increased activity of the E2F1/FOXM1 transcriptional program. IPA predicts positive E2F1 (z = +6.55) and FOXM1 (z = +5.14) signatures alongside a negative RB1 signature (z = -7.18). This agrees with the weaker repression of cell-cycle genes in the p21 KO. MCF10A instead shows prominent negative TGFB1 (z = -5.69, -6.75 and -5.33 for ionizing radiation, UVA and UVB) and SMAD3 (z = -4.23, -4.94 and -3.62) predictions, suggesting a different regulatory response to p21 loss.
+
+CDKN1A (p21) and CDKN2A (p16/p14ARF locus) also appear as inferred upstream regulators. Their presence reflects downstream signature matching, not restoration of functional p21; CDKN2A is not isoform-specific.
+
+## Diseases & Bio Functions: predicted cellular consequences
+
+**Methods.** We selected IPA biological functions related to proliferation, survival, apoptosis, migration and invasion to assess whether the transcriptional changes suggest different consequences of p21 loss in the two cell lines. This is a hypothesis-focused, exploratory view of the existing IPA results.
+
+```{r fig-ipa-functions, fig.cap="IPA Diseases and Bio Functions activation z-scores from the six formal p21 interactions. Displayed functions were selected for relevance to cell viability/survival, apoptosis, proliferation, migration and invasion. Asterisks denote BH-adjusted overlap p < 0.05; grey cells lack a predicted activation z-score. Predictions are not measurements of cellular phenotypes.", out.width="100%"}
+show_figure("ipa_functions")
+```
+
+**Interpretation.** The predicted consequences of p21 loss differ sharply between the cell lines. After UVA, HT1080 KO shows IPA signatures of increased cell viability (z = +5.89), survival (z = +5.82) and proliferation (z = +6.37), together with reduced apoptosis (z = -5.81). This is consistent with reduced transcriptional checkpoint control and a more survival-oriented response. In MCF10A, IPA instead predicts reduced cell viability after all three exposures (z = -4.61, -4.21 and -2.20 for ionizing radiation, UVA and UVB) and increased apoptosis after ionizing radiation and UVA (z = +3.53 and +2.89). 
+
+IPA also suggests altered mitochondrial regulation, including a negative oxidative-phosphorylation signature in HT1080 after UVA (z = -7.28). This adds a metabolic dimension without changing the central contrast in cell-cycle regulation.
+
+# DREAM-associated transcriptional regulation
+
+The previous results point to altered cell-cycle control following p21 loss, especially through the RB/E2F axis. This led us to DREAM (DP, RB-like, E2F and MuvB), a repressor complex that helps switch off genes needed for DNA replication and cell division. The canonical p53–p21 pathway facilitates DREAM-associated repression, but our central question is whether these cell-cycle genes still become repressed after irradiation when p21 is absent.
+
+**Methods.** We examined 410 published DREAM-positive genes from Engeland (2022); 407 had valid Wald statistics in our interaction results. The selected genes are also associated with RB/E2F regulation, so the analysis tests DREAM-associated transcription rather than DREAM-specific complex activity.
+
+## DREAM target enrichment across p21 interactions
+
+**Methods.** Using the six p21-interaction contrasts, we tested whether DREAM target genes preferentially showed more positive or more negative responses in KO than in WT. Genes were ranked by the original DESeq2 Wald statistics; FDR correction was performed across the six DREAM gene-set tests. The NES reports the direction of this difference, not the absolute expression level of the genes.
+
+```{r fig-dream-nes, fig.cap="DREAM target-gene enrichment across six p21-by-irradiation interaction rankings. NES values were calculated using original DESeq2 Wald statistics (KO-minus-WT irradiation-response interactions) and 407 rankable DREAM-positive targets from Engeland (2022). Asterisks indicate BH FDR < 0.05 across the six targeted GSEA tests. Positive and negative NES refer to the interaction ranking, not absolute expression or direct DREAM-complex activity.", out.width="95%"}
+show_figure("dream_nes")
+```
+
+**Interpretation.** DREAM targets respond in opposite directions to p21 loss in HT1080 and MCF10A. In HT1080, the DREAM signature shifts consistently toward a more positive irradiation response in KO after ionizing radiation (NES = +2.49, FDR = $4.46 \times 10^{-39}$), UVA (NES = +2.64, FDR = $2.17 \times 10^{-64}$) and UVB (NES = +2.45, FDR = $1.15 \times 10^{-37}$). In MCF10A, DREAM targets shift toward more negative responses in KO after ionizing radiation (NES = -1.94, FDR = $1.27 \times 10^{-15}$) and UVB (NES = -1.47, FDR = $3.33 \times 10^{-5}$). UVA shows the same direction in MCF10A but is not significant (NES = -1.09, FDR = 0.176).
+
+The opposing enrichment patterns suggest that p21 loss affects irradiation-induced cell-cycle repression differently in the two cell lines. A sensitivity analysis excluding very-low-expression genes (`baseMean >= 10`) preserved the directions and significant findings, indicating that the main patterns are not driven by low counts.
+
+## Leading-edge programs underlying the DREAM enrichment
+
+**Methods.** We examined the leading-edge genes contributing most strongly to each DREAM enrichment. The six-panel figure shows the enrichment curves, the functional composition of the leading edges using exploratory GO-BP categories, and the 25 highest-ranked contributing genes for each significant result. These categories describe target-gene functions, not separate pathway-enrichment tests. The nonsignificant MCF10A UVA result is shown for completeness without a functional leading-edge interpretation.
+
+```{r dream-landscape-start, results='asis'}
+if (knitr::is_latex_output() && isTRUE(params$show_dream_gsea_panels)) {
+  cat("\\clearpage\n\\begin{landscape}\n")
+}
+```
+
+```{r fig-dream-six, fig.cap="DREAM-target GSEA and leading-edge characterization across six KO-minus-WT p21 interactions (HT1080 top, MCF10A bottom; ionizing radiation, UVA, UVB). Curves use original Wald-statistic rankings. For significant gene-set enrichments (BH FDR < 0.05 across six tests), stacked bars show descriptive GO-BP categories among leading-edge targets and framed gene lists show the top 25 contributors by absolute Wald statistic, subsequently grouped by GO-BP annotation. The MCF10A UVA gene-set result is nonsignificant and its functional composition is not interpreted. 'Replication + DDR' denotes overlap of the selected annotation roots; each gene contributes to one display category.", out.width="100%", fig.pos="H"}
+if (isTRUE(params$show_dream_gsea_panels)) show_figure("dream_six")
+```
+
+```{r dream-landscape-end, results='asis'}
+if (knitr::is_latex_output() && isTRUE(params$show_dream_gsea_panels)) {
+  cat("\\end{landscape}\n\\clearpage\n")
+}
+```
+
+**Interpretation.** The genes driving the DREAM signals predominantly participate in cell division, DNA replication and chromosome maintenance. In HT1080, the strongest signal occurs after UVA (295 leading-edge genes), but ionizing radiation and UVB show related functions. MCF10A largely involves similar cell-cycle-associated genes; what differs is the direction in which their irradiation responses change when p21 is lost. This strengthens the idea that the two cell lines regulate a related proliferation program differently, rather than engaging entirely unrelated pathways.
+
+# Summary and biological interpretation
+
+Our analyses reveal that irradiation-induced transcriptional responses differ substantially between HT1080 and MCF10A cells and are strongly influenced by p21 status. Across ionizing radiation, UVA and UVB, we identified distinct patterns of gene induction and repression, indicating that irradiation does not trigger a uniform transcriptional response. Instead, both cellular background and radiation quality shape the biological programs activated or suppressed following exposure. Importantly, the consequences of p21 loss differ markedly between the malignant HT1080 fibrosarcoma cells and the non-tumorigenic MCF10A epithelial cells.
+
+The global analysis of irradiation responses identified eight gene-expression modules with distinct patterns across the twelve experimental conditions. These modules represent different biological processes, including DNA replication and cell-cycle regulation, autophagy and vesicular trafficking, inflammatory responses, mitochondrial functions, cytoskeletal organization and ciliary processes. Several modules showed pronounced differences between WT and p21 KO cells. For example, the HT1080-associated repression module M08 showed substantially weaker repression following UVA irradiation in p21-deficient cells. In contrast, MCF10A exhibited stronger UVB-associated induction (M04) and repression (M07) in the absence of p21. These findings demonstrate that p21 contributes to multiple aspects of the irradiation response, with effects that extend beyond its established role in cell-cycle regulation.
+
+The direct comparison of WT and p21 KO irradiation responses confirmed substantial differences between the two cell lines. The strongest p21-dependent transcriptional changes were observed in HT1080 following UVA irradiation, particularly among genes involved in DNA replication, chromosome segregation and cell division. Many of these genes were strongly repressed by irradiation in WT cells but showed a weaker repressive response after p21 loss. This suggests that p21 is particularly important for suppressing proliferation-associated transcription in irradiated HT1080 cells. MCF10A displayed a different pattern, indicating that the transcriptional consequences of p21 deficiency are not conserved between the two cellular backgrounds.
+
+The functional and upstream-regulator analyses further support these differences. In HT1080, particularly after UVA irradiation, IPA predicted increased E2F1 and FOXM1 activity together with reduced RB1-associated regulation. These signatures were accompanied by predictions of increased proliferation, cell viability and survival, as well as reduced apoptosis. Collectively, they suggest that p21 loss may favor continued proliferation-associated transcription and reduced checkpoint enforcement in HT1080. In contrast, MCF10A showed predictions of reduced cell viability and, under selected irradiation conditions, increased apoptosis, suggesting a more growth-restrictive response to p21 deficiency. Additional findings involving mitochondrial metabolism, TGF-$\beta$/SMAD signaling and other stress-response pathways indicate that the consequences of p21 loss extend beyond cell-cycle control.
+
+The targeted DREAM analysis provided a particularly strong link between these transcriptional changes and the regulation of proliferation-associated genes. In HT1080, DREAM targets were consistently enriched among genes showing a more positive irradiation response in p21 KO than in WT across all three radiation qualities (NES +2.45 to +2.64). This was predominantly associated with weaker irradiation-induced repression of DREAM-associated cell-cycle genes. Remarkably, MCF10A showed the opposite pattern after ionizing radiation and UVB (NES -1.94 and -1.47), with stronger repression-associated responses in p21-deficient cells. Thus, although p21 is a central regulator of cell-cycle arrest, its loss does not necessarily abolish the transcriptional suppression of proliferation genes. Instead, our findings suggest that alternative regulatory mechanisms may preserve or reinforce this response in MCF10A.
+
+One possible explanation involves p53-dependent, p21-independent regulation of DREAM-associated genes, as recently demonstrated by Agrawal and Sengupta (2025), including in HT1080 cells under asynchronous growth conditions. Our results therefore raise the possibility that the relative contribution of canonical p21-dependent regulation and alternative checkpoint mechanisms differs between the two cell lines following irradiation. Differences in cell-cycle distribution between WT and KO cells may also contribute to the observed transcriptional patterns.
+
+Taken together, our findings demonstrate that p21 loss affects several interconnected biological programs, including cell-cycle regulation, DNA replication, cellular stress responses and pathways associated with proliferation and survival. The most striking observation is the opposing regulation of proliferation-associated transcription in HT1080 and MCF10A: whereas p21 deficiency weakens irradiation-induced repression in the malignant HT1080 model, substantial repression is maintained or enhanced in the non-tumorigenic MCF10A model. Together with the contrasting functional predictions, this suggests fundamentally different cellular responses to the loss of p21. These results provide a basis for investigating alternative mechanisms of cell-cycle control and their contribution to irradiation responses in different cellular backgrounds.
+
+## Literature supporting the DREAM model
+
+Engeland K. Cell cycle regulation: p53-p21-RB signaling. *Cell Death & Differentiation*. 2022;29:946–960. DOI: [10.1038/s41418-022-00988-z](https://doi.org/10.1038/s41418-022-00988-z).
+
+Agrawal R, Sengupta S. p53 regulates DREAM complex-mediated repression in a p21-independent manner. *The EMBO Journal*. 2025;44:2279–2297. DOI: [10.1038/s44318-025-00402-7](https://doi.org/10.1038/s44318-025-00402-7).
+
+# Session information
+
+The report is a presentation layer: differential-expression models, module assignments, GO analyses, IPA predictions and DREAM enrichment were produced in the corresponding upstream analyses. The DREAM NES heatmap and six-context GSEA/leading-edge figure are imported as precomputed results; no gene-set tests are recomputed while knitting this document. Complete analysis outputs retain the GSEA statistics, gene-level effects, leading-edge membership, irradiation-response patterns and GO annotation audit.
+
+```{r session-info}
+sessionInfo()
+```
