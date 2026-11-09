@@ -44,10 +44,8 @@ if (!requireNamespace("here", quietly = TRUE)) stop("Install the 'here' package.
 here::i_am("R/06_functional_GO.R")
 source(here::here("R", "00_setup.R"))
 source(here::here("R", "plot_style.R"))
-for (pkg in c("ggplot2", "scales", "clusterProfiler", "org.Hs.eg.db", "fgsea",
-              "GOSemSim", "ekbSeq", "patchwork")) {
-  if (!requireNamespace(pkg, quietly = TRUE)) stop("Missing R package: ", pkg)
-}
+p21_check(c("ggplot2", "scales", "clusterProfiler", "org.Hs.eg.db", "fgsea",
+              "GOSemSim", "ekbSeq", "patchwork"))
 
 alpha <- 0.05
 ## fgsea reports p-values below this bound as 1e-10. Setting this to 0
@@ -65,15 +63,6 @@ fig_dir <- file.path(root, "figures")
 mod_dir <- here::here("Results", "03_response_architecture", "02_MODULE_L2")
 raw_dir <- here::here("Results", "04_p21_interactions", "tables", "unshrunken")
 for (d in c(tab_dir, fig_dir)) dir.create(d, recursive = TRUE, showWarnings = FALSE)
-status <- function(...) {
-  message(sprintf("[%s] %s", format(Sys.time(), "%H:%M:%S"), paste0(..., collapse = "")))
-  flush.console()
-}
-plot_theme <- function(size = 10) {
-  if (exists("p21_theme", mode = "function")) p21_theme(size) else ggplot2::theme_classic(base_size = size)
-}
-export <- function(name, p, w, h) ekbSeq::export_plot_dual(
-  file.path(fig_dir, name), p, width = w, height = h, rasterize = FALSE)
 
 ## ******
 ## Small, deterministic helpers: preserve IDs and representativeness.
@@ -89,7 +78,7 @@ short_name <- function(x, n = 57L) ifelse(nchar(x) > n, paste0(substr(x, 1L, n -
 ## Semantic GO pruning for FIGURES only. Never remove terms from full results.
 ## GOSemSim compares GO ontology meaning rather than overlapping gene lists.
 ## Limit candidate pools to avoid expensive all-vs-all GO similarity matrices.
-status("Preparing GO-BP semantic similarity (Wang; reused throughout)")
+p21_status("Preparing GO-BP semantic similarity (Wang; reused throughout)")
 sem_data <- GOSemSim::godata(ont = "BP", computeIC = FALSE)
 
 select_semantic <- function(tab, n = 3L, anchors = character(), max_candidates = 65L) {
@@ -160,7 +149,7 @@ representative_id <- function(tab, theme, anchors = character()) {
 ## Reuse the full module GO-BP ORA from script 03
 ## Background = DEG-union genes with ENTREZ annotation (script-03 definition).
 ## Do NOT interpret GO-ORA enrichment as process activation or repression.
-status("1/5 | Reading full module GO-BP ORA and fixed L2 membership")
+p21_status("1/5 | Reading full module GO-BP ORA and fixed L2 membership")
 ora_path <- file.path(mod_dir, "GO_BP_ORA_all_terms.csv")
 mem_path <- file.path(mod_dir, "module_membership.csv")
 for (path in c(ora_path, mem_path)) if (!file.exists(path)) stop("Missing script-03 output: ", path)
@@ -186,7 +175,7 @@ focus_go <- list(
 ora_shown <- do.call(rbind, lapply(pair_order, function(m) {
   x <- ora_sig[ora_sig$module == m, , drop = FALSE]
   if (!nrow(x)) return(NULL)
-  status("Module ORA | ", m, " | semantic selection among ", nrow(x), " significant GO terms")
+  p21_status("Module ORA | ", m, " | semantic selection among ", nrow(x), " significant GO terms")
   z <- select_semantic(x, n = 3L, anchors = focus_go[[m]], max_candidates = 60L)
   z$display_selection <- ifelse(z$ID %in% focus_go[[m]], "reviewed_anchor", "Wang_nonredundant_FDR")
   z
@@ -203,7 +192,7 @@ if (nrow(ora_shown)) {
   ora_shown$minus_log10_FDR <- numeric(0)
 }
 utils::write.csv(ora_shown, file.path(tab_dir, "GO_BP_ORA_display_terms.csv"), row.names = FALSE)
-status("Module ORA | ", nrow(ora_sig), " significant results; ",
+p21_status("Module ORA | ", nrow(ora_sig), " significant results; ",
        nrow(ora_shown), " representative GO-module pairs selected")
 
 ## ************************************************************************************************
@@ -212,7 +201,7 @@ status("Module ORA | ", nrow(ora_sig), " significant results; ",
 ## the DEG union). Wald statistic is signed KO-response minus WT-response.
 ## ENTREZ duplicates retain the most abundant feature (highest baseMean),
 ## not the greatest |stat|; this avoids selecting extreme Wald values.
-status("2/5 | Loading or computing six GO-BP interaction GSEAs")
+p21_status("2/5 | Loading or computing six GO-BP interaction GSEAs")
 plan <- expand.grid(radiation = c("7gy", "UVA", "UVB"),
                     cell_line = c("HT1080", "MCF10A"), stringsAsFactors = FALSE)
 plan$id <- with(plan, paste(cell_line, radiation, sep = "_"))
@@ -225,7 +214,7 @@ using_cached_gsea <- reuse_existing_gsea && file.exists(full_gsea_path)
 if (using_cached_gsea) {
   ## Reuse a completed six-contrast analysis for FIGURE-ONLY revisions.
   ## The user must set reuse_existing_gsea = FALSE when changing the input data.
-  status("GO-GSEA | reusing existing complete results; no rerun of six enrichments")
+  p21_status("GO-GSEA | reusing existing complete results; no rerun of six enrichments")
   gsea <- utils::read.csv(full_gsea_path, stringsAsFactors = FALSE)
   stopifnot(all(c("ID", "Description", "NES", "p.adjust", "core_enrichment",
                   "contrast_id") %in% names(gsea)),
@@ -237,7 +226,7 @@ if (using_cached_gsea) {
   annotation_map <- NULL
   for (i in seq_len(nrow(plan))) {
     id <- plan$id[i]
-    status(sprintf("GO-GSEA %d/6 | %s | reading Wald statistics", i, id))
+    p21_status(sprintf("GO-GSEA %d/6 | %s | reading Wald statistics", i, id))
     x <- utils::read.csv(raw_paths[i], stringsAsFactors = FALSE)
     needed <- c("ENSEMBL", "ENTREZID", "SYMBOL", "baseMean", "stat", "padj", "lfc_method")
     if (!all(needed %in% names(x)) || anyNA(x$ENSEMBL) || anyDuplicated(x$ENSEMBL) ||
@@ -257,10 +246,10 @@ if (using_cached_gsea) {
     ## Equal statistics are legitimate; do not add random jitter to the ranks.
     gene_list <- gene_list[order(-gene_list, names(gene_list), method = "radix")]
     n_tied <- length(gene_list) - length(unique(unname(gene_list)))
-    if (n_tied) status(sprintf("GO-GSEA %d/6 | %s | %d tied Wald ranks (%.2f%%); deterministic ENTREZ ordering",
+    if (n_tied) p21_status(sprintf("GO-GSEA %d/6 | %s | %d tied Wald ranks (%.2f%%); deterministic ENTREZ ordering",
                                i, id, n_tied, 100 * n_tied / length(gene_list)))
     if (length(gene_list) < 1000L) stop("Too few uniquely mapped Wald genes: ", id)
-    status(sprintf("GO-GSEA %d/6 | %s | %d ranked ENTREZ genes | gseGO started",
+    p21_status(sprintf("GO-GSEA %d/6 | %s | %d ranked ENTREZ genes | gseGO started",
                    i, id, length(gene_list)))
     t0 <- proc.time()[["elapsed"]]
     ## pvalueCutoff=1 retains nonsignificant terms for an honest complete table.
@@ -292,7 +281,7 @@ if (using_cached_gsea) {
       z$radiation <- plan$radiation[i]
       all_gsea[[id]] <- z
     }
-    status(sprintf("GO-GSEA %d/6 | %s | %.1fs | %d tested terms, %d FDR<0.05",
+    p21_status(sprintf("GO-GSEA %d/6 | %s | %.1fs | %d tested terms, %d FDR<0.05",
       i, id, proc.time()[["elapsed"]] - t0, nrow(z),
       if (nrow(z)) sum(is.finite(z$p.adjust) & z$p.adjust < alpha) else 0L))
   }
@@ -312,8 +301,8 @@ gsea_sig <- gsea[is.finite(gsea$p.adjust) & gsea$p.adjust < alpha, , drop = FALS
 ## Figure A - compact GO-ORA results organized BY MODULE, not a sparse matrix
 ## Horizontal axis shows -log10 FDR (capped for display); dots show fraction of
 ## annotated module genes. GO biology is functional membership, not activation.
-status("3/5 | Plotting semantically nonredundant module GO-ORA")
-fig_theme <- plot_theme(10.5) + ggplot2::theme(
+p21_status("3/5 | Plotting semantically nonredundant module GO-ORA")
+fig_theme <- p21_theme(10.5) + ggplot2::theme(
   panel.grid = ggplot2::element_blank(), panel.border = ggplot2::element_blank(),
   axis.line = ggplot2::element_blank(), axis.ticks.y = ggplot2::element_blank(),
   strip.background = ggplot2::element_blank(),
@@ -349,14 +338,15 @@ if (nrow(ora_shown)) {
       panel.spacing.y = grid::unit(0.22, "lines"),
       axis.text.y = ggplot2::element_text(size = 9.3, color = "black"),
       legend.position = "right")
-  export("GO_BP_module_ORA_dotplot", p_ora, 14.5, 10.0)
-} else status("No significant module ORA terms; dotplot not generated")
+  ekbSeq::export_plot_dual(file.path(fig_dir, "GO_BP_module_ORA_dotplot"), p_ora,
+    width = 14.5, height = 10.0, rasterize = FALSE)
+} else p21_status("No significant module ORA terms; dotplot not generated")
 
 ## ************************************************************************************************
 ## Figure B - GO-GSEA heatmap: semantic pruning across the SIX interaction tests
 ## Identical GO IDs are used across the six columns. NES sign refers to the
 ## SIGNED KO minus WT contrast, not stronger/weaker absolute response.
-status("4/5 | Semantic GSEA term reduction and publication-style heatmap")
+p21_status("4/5 | Semantic GSEA term reduction and publication-style heatmap")
 selected_gsea <- character()
 if (nrow(gsea_sig)) {
   gs <- gsea_sig[order(gsea_sig$p.adjust, gsea_sig$ID), , drop = FALSE]
@@ -374,7 +364,7 @@ if (nrow(gsea_sig)) {
                                      "reviewed_anchor", "Wang_nonredundant_multicontrast")
   chosen$theme <- classify_theme(chosen$Description)
   utils::write.csv(chosen, file.path(tab_dir, "GO_BP_GSEA_display_terms.csv"), row.names = FALSE)
-  status("GSEA | ", nrow(gsea_sig), " significant rows across six contrasts; ",
+  p21_status("GSEA | ", nrow(gsea_sig), " significant rows across six contrasts; ",
          length(selected_gsea), " semantically distinct GO IDs displayed")
 
   term_data <- chosen[, c("ID", "Description", "theme")]
@@ -415,10 +405,11 @@ if (nrow(gsea_sig)) {
       strip.text.x = ggplot2::element_text(face = "bold", size = 11),
       axis.text.y = ggplot2::element_text(size = 9.5, color = "black"),
       legend.position = "right")
-  export("GO_BP_interaction_GSEA_heatmap", p_gsea, 15, max(7.0, length(id_order) * 0.45 + 2.5))
+  ekbSeq::export_plot_dual(file.path(fig_dir, "GO_BP_interaction_GSEA_heatmap"), p_gsea,
+    width = 15, height = max(7.0, length(id_order) * 0.45 + 2.5), rasterize = FALSE)
 } else {
   utils::write.csv(gsea_sig, file.path(tab_dir, "GO_BP_GSEA_display_terms.csv"), row.names = FALSE)
-  status("No significant GSEA GO terms; heatmap omitted")
+  p21_status("No significant GSEA GO terms; heatmap omitted")
 }
 
 ## ************************************************************************************************
@@ -426,7 +417,7 @@ if (nrow(gsea_sig)) {
 ## transparent independent representative GO ID for ORA and GSEA.
 ## These two IDs may DIFFER. Do not interpret them as an exact GO-term match;
 ## there is no pooled p-value and no new statistical gene-set test.
-status("5/5 | Building six-theme functional landscape and provenance table")
+p21_status("5/5 | Building six-theme functional landscape and provenance table")
 ora_theme <- ora_sig
 ora_theme$theme <- classify_theme(ora_theme$Description)
 gsea_theme <- gsea
@@ -536,7 +527,8 @@ landscape <- p_left + p_right + patchwork::plot_layout(widths = c(1.05, 1.30)) +
       plot.title = ggplot2::element_text(size = 16, face = "bold"),
       plot.subtitle = ggplot2::element_text(size = 10),
       plot.caption = ggplot2::element_text(size = 9)))
-export("GO_BP_functional_landscape", landscape, 18, 7.3)
+ekbSeq::export_plot_dual(file.path(fig_dir, "GO_BP_functional_landscape"), landscape,
+  width = 18, height = 7.3, rasterize = FALSE)
 
 ## ******
 ## Preserve a compact exact-GO overlap table for selected representative IDs.
@@ -570,5 +562,5 @@ empty <- data.frame(GO_ID = character(), Description = character(), module = cha
 overlap_tab <- if (length(overlap_rows)) do.call(rbind, overlap_rows) else empty
 utils::write.csv(overlap_tab, file.path(tab_dir, "GO_module_leading_edge_overlap.csv"),
                  row.names = FALSE)
-status("Complete | full ORA/GSEA preserved; representative figures and provenance: ", root)
+p21_status("Complete | full ORA/GSEA preserved; representative figures and provenance: ", root)
 

@@ -36,9 +36,7 @@ if (!requireNamespace("here", quietly = TRUE)) stop("Install the 'here' package.
 here::i_am("R/02_primary_DE.R")
 source(here::here("R", "00_setup.R"))
 source(here::here("R", "plot_style.R"))
-if (!requireNamespace("ggplot2", quietly = TRUE)) stop("Install 'ggplot2'.")
-if (!requireNamespace("patchwork", quietly = TRUE)) stop("Install 'patchwork' for the volcano atlas.")
-if (!requireNamespace("EnhancedVolcano", quietly = TRUE)) stop("Install 'EnhancedVolcano' for ekbSeq::plot_volcano().")
+p21_check(c("ggplot2", "patchwork", "EnhancedVolcano"))
 
 alpha <- 0.05
 primary_dir <- here::here("Results", "02_primary_DE", "01_PRIMARY_model_A")
@@ -107,10 +105,10 @@ volcano_panels <- vector("list", nrow(contrast_plan))
 
 for (i in seq_len(nrow(contrast_plan))) {
   info <- contrast_plan[i, ]
-  contrast <- c("group", info$treatment, info$control)
   message("Primary contrast ", i, "/12: ", info$contrast_id)
 
-  res <- DESeq2::results(dds, contrast = contrast, alpha = alpha)
+  res <- ekbSeq::deseq_contrast(dds, info$treatment, info$control,
+    condition = "group", lfc_threshold = 0, p_threshold = alpha)
   shrunk <- DESeq2::lfcShrink(dds, res = res, type = "ashr", quiet = TRUE)
   raw_tab <- annotate_de(res, annotation)
   shrunk_tab <- annotate_de(shrunk, annotation)
@@ -430,9 +428,10 @@ dds_B <- DESeq2::DESeq(dds_B, quiet = TRUE, parallel = FALSE)
 sensitivity_rows <- vector("list", nrow(contrast_plan))
 for (i in seq_len(nrow(contrast_plan))) {
   info <- contrast_plan[i, ]
-  contrast <- c("group", info$treatment, info$control)
-  a <- DESeq2::results(dds, contrast = contrast, alpha = alpha)
-  b <- DESeq2::results(dds_B, contrast = contrast, alpha = alpha)
+  a <- ekbSeq::deseq_contrast(dds, info$treatment, info$control,
+    condition = "group", lfc_threshold = 0, p_threshold = alpha)
+  b <- ekbSeq::deseq_contrast(dds_B, info$treatment, info$control,
+    condition = "group", lfc_threshold = 0, p_threshold = alpha)
   stopifnot(identical(rownames(a), rownames(b)))
 
   sig_a <- !is.na(a$padj) & a$padj < alpha

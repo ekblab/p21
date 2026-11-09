@@ -1,0 +1,29 @@
+here() starts at /run/user/1001/gvfs/smb-share:server=192.168.35.240,share=zellbiologie/Aktuell/Eigene Dateien/Eigene Dateien_Marc/R/Github/ekblab/p21
+Reading: HT1080_7gy_p21_interaction_ashr.csv
+  HT1080_WT_7GY                  FDR < 0.05: 2658
+  HT1080_p21KO_7GY               FDR < 0.05: 2031
+  HT1080_p21KOminusWT_7GY        FDR < 0.05: 343
+Reading: HT1080_UVA_p21_interaction_ashr.csv
+  HT1080_WT_UVA                  FDR < 0.05: 5882
+  HT1080_p21KO_UVA               FDR < 0.05: 4613
+  HT1080_p21KOminusWT_UVA        FDR < 0.05: 2615
+Reading: HT1080_UVB_p21_interaction_ashr.csv
+  HT1080_WT_UVB                  FDR < 0.05: 5908
+  HT1080_p21KO_UVB               FDR < 0.05: 4679
+  HT1080_p21KOminusWT_UVB        FDR < 0.05: 490
+Reading: MCF10A_7gy_p21_interaction_ashr.csv
+  MCF10A_WT_7GY                  FDR < 0.05: 2669
+  MCF10A_p21KO_7GY               FDR < 0.05: 3816
+  MCF10A_p21KOminusWT_7GY        FDR < 0.05: 1006
+Reading: MCF10A_UVA_p21_interaction_ashr.csv
+  MCF10A_WT_UVA                  FDR < 0.05: 2819
+  MCF10A_p21KO_UVA               FDR < 0.05: 2090
+  MCF10A_p21KOminusWT_UVA        FDR < 0.05: 924
+Reading: MCF10A_UVB_p21_interaction_ashr.csv
+  MCF10A_WT_UVB                  FDR < 0.05: 3549
+  MCF10A_p21KO_UVB               FDR < 0.05: 5405
+  MCF10A_p21KOminusWT_UVB        FDR < 0.05: 141
+
+IPA export complete: /run/user/1001/gvfs/smb-share:server=192.168.35.240,share=zellbiologie/Aktuell/Eigene Dateien/Eigene Dateien_Marc/R/Github/ekblab/p21/Results/07_IPA/p21_IPA_18_observations.txt
+  61806 genes | 18 observations | 37 columns
+Upload as Expr Log Ratio + Expr FDR (BH-adjusted p-values).

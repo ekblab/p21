@@ -1,0 +1,47 @@
+         used (Mb) gc trigger (Mb) max used (Mb)
+Ncells 302258 16.2     709531 37.9   500875 26.8
+Vcells 524092  4.0    8388608 64.0  1977569 15.1
+here() starts at /run/user/1001/gvfs/smb-share:server=192.168.35.240,share=zellbiologie/Aktuell/Eigene Dateien/Eigene Dateien_Marc/R/Github/ekblab/p21
+
+
+p21 setup successful: essential packages and input files found.
+~processing + group: 91 samples, 17 coefficients (full rank).
+Interaction 1/6: HT1080_7gy (p21-negative response minus WT response)
+  LFC check: 14366 genes tested; 285 expressed genes lack counts in a WT/KO pair; GLM max error 1.55e-15; primary CSV max error 9.27e-15
+Interaction 2/6: HT1080_UVA (p21-negative response minus WT response)
+  LFC check: 14366 genes tested; 285 expressed genes lack counts in a WT/KO pair; GLM max error 1.28e-15; primary CSV max error 9.66e-15
+Interaction 3/6: HT1080_UVB (p21-negative response minus WT response)
+  LFC check: 14402 genes tested; 249 expressed genes lack counts in a WT/KO pair; GLM max error 1.55e-15; primary CSV max error 1.05e-14
+Interaction 4/6: MCF10A_7gy (p21-negative response minus WT response)
+  LFC check: 14141 genes tested; 510 expressed genes lack counts in a WT/KO pair; GLM max error 3.13e-15; primary CSV max error 9.21e-15
+Interaction 5/6: MCF10A_UVA (p21-negative response minus WT response)
+  LFC check: 14122 genes tested; 529 expressed genes lack counts in a WT/KO pair; GLM max error 2.66e-15; primary CSV max error 9.1e-15
+Interaction 6/6: MCF10A_UVB (p21-negative response minus WT response)
+  LFC check: 14140 genes tested; 511 expressed genes lack counts in a WT/KO pair; GLM max error 3.11e-15; primary CSV max error 9.77e-15
+Warnmeldungen:
+1: Using `size` aesthetic for lines was deprecated in ggplot2 3.4.0.
+ℹ Please use `linewidth` instead.
+ℹ The deprecated feature was likely used in the EnhancedVolcano package.
+  Please report the issue to the authors. 
+2: The `size` argument of `element_rect()` is deprecated as of ggplot2 3.4.0.
+ℹ Please use the `linewidth` argument instead.
+ℹ The deprecated feature was likely used in the EnhancedVolcano package.
+  Please report the issue to the authors. 
+ cell_line radiation n_interaction_FDR05 n_more_positive_p21neg
+    HT1080       7gy                 343                    179
+    HT1080       UVA                2615                   1387
+    HT1080       UVB                 490                    267
+    MCF10A       7gy                1006                    460
+    MCF10A       UVA                 924                    389
+    MCF10A       UVB                 141                     33
+ n_more_negative_p21neg
+                    164
+                   1228
+                    223
+                    546
+                    535
+                    108
+7 Gy / UVA concordance: HT1080 | r = 0.647 | 258 shared FDR < 0.05
+7 Gy / UVA concordance: MCF10A | r = 0.802 | 559 shared FDR < 0.05
+Interaction results: /run/user/1001/gvfs/smb-share:server=192.168.35.240,share=zellbiologie/Aktuell/Eigene Dateien/Eigene Dateien_Marc/R/Github/ekblab/p21/Results/04_p21_interactions
+Done: 6 direct Wald interactions; 6 ashr tables; 4 figures (counts, volcano, scatter, dot plot).

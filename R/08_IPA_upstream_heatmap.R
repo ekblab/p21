@@ -8,6 +8,7 @@ required <- c("here", "ComplexHeatmap", "circlize", "grid", "ekbSeq")
 missing_pkgs <- required[!vapply(required, requireNamespace, logical(1), quietly = TRUE)]
 if (length(missing_pkgs)) stop("Missing R packages: ", paste(missing_pkgs, collapse = ", "))
 here::i_am("R/08_IPA_upstream_heatmap.R")
+source(here::here("R", "plot_style.R"))
 ## Keep the ORIGINAL IPA comparison exports where they are.
 input_dir <- here::here("Results", "07_IPA")
 ## Figures produced by script 08 belong to its own Results folder.
@@ -80,9 +81,8 @@ select_ipa <- function(pair, features, comparison) {
 
 ## The same exact blue–white–red colors/breaks as module Figures 13/14.
 cap <- 6
-colors <- c("#12386F", "#306FB3", "#94BDE2", "#E0ECF8", "#FFFFFF",
-            "#FAE1DD", "#E89A94", "#C94644", "#941E2C")
-breaks <- cap * c(-1, -.75, -.40, -.12, 0, .12, .40, .75, 1)
+colors <- p21_heatmap_colors
+breaks <- cap * p21_heatmap_stops
 col_fun <- circlize::colorRamp2(breaks, colors)
 
 contrast_labels <- if (comparison == "KO_minus_WT") {

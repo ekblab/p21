@@ -3,13 +3,15 @@
 ## Inputs: exported module/response CSVs and the fully semantically reduced
 ## GO-BP table generated in stage 1. No DESeq2, no k-means, no GO enrichment.
 ## All plots: ekbSeq::export_plot_dual (PNG + SVG).
-## Audit: mandatory GO_BP_theme_category_audit.xlsx + CSVs with every
+## Audit: complete CSVs with every
 ## GO ID, term, rule, override, multiple matches, module & plotted status.
 ## Categories are curated EXPLORATORY biological themes, not GO-slim classes.
 
 if (!requireNamespace("here", quietly = TRUE)) stop("Missing package: here")
+here::i_am("R/03_final_visualisations.R")
 source(here::here("R", "03_shared.R"), local = TRUE)
-p21_check(c("ggplot2", "scales", "patchwork", "ekbSeq", "openxlsx"))
+p21_check(c("ggplot2", "scales", "patchwork", "ekbSeq"))
+source(here::here("R", "plot_style.R"))
 
 ## ************************************************************************************************
 ## Report figures from already exported module tables (no re-analysis)
@@ -70,11 +72,9 @@ add_condition_header <- function(top) {
 
 module_fill <- function(cap, title) {
   ## Higher contrast at moderate values than an evenly spaced large-range gradient.
-  breaks <- c(-cap, -.75*cap, -.40*cap, -.12*cap, 0,
-              .12*cap, .40*cap, .75*cap, cap)
+  breaks <- cap * p21_heatmap_stops
   ggplot2::scale_fill_gradientn(
-    colors = c("#12386F", "#306FB3", "#94BDE2", "#E0ECF8", "#FFFFFF",
-               "#FAE1DD", "#E89A94", "#C94644", "#941E2C"),
+    colors = p21_heatmap_colors,
     values = scales::rescale(breaks, from = c(-cap, cap)),
     limits = c(-cap, cap), oob = scales::squish,
     name = title, breaks = c(-cap, 0, cap))
@@ -92,10 +92,6 @@ module_theme <- function(base_size = 11) {
     plot.subtitle = ggplot2::element_text(size = 10, color = "grey30"),
     plot.caption = ggplot2::element_text(size = 8, color = "grey35"),
     plot.margin = ggplot2::margin(10, 16, 10, 10))
-}
-
-export_module_plot <- function(plot, filename, width, height) {
-  p21_export(file.path(figure_dir, filename), plot, width = width, height = height)
 }
 
 plot_module_means <- function(order, name) {
@@ -169,7 +165,8 @@ plot_module_means <- function(order, name) {
     ggplot2::labs(title = "Mean irradiation responses across L2 modules",
       subtitle = "Original ashr log2FC | 8 exploratory response-pattern modules",
       caption = "Blue: negative; red: positive response vs control. Means are descriptive, not interaction tests.")
-  export_module_plot(p, name, 17.2, 7.5)
+  ekbSeq::export_plot_dual(file.path(figure_dir, name), p,
+    width = 17.2, height = 7.5, rasterize = FALSE)
 }
 
 select_module_genes <- function() {
@@ -248,13 +245,13 @@ plot_module_genes <- function() {
     ggplot2::labs(title = "Representative genes across radiation-response modules",
       subtitle = "Three biologically informative, pattern-consistent genes per module",
       caption = "Original ashr log2FC, not clustering-normalized values. Module colors denote membership.")
-  export_module_plot(p, "representative_gene_heatmap_3per_module", 14.5, 11.5)
+  ekbSeq::export_plot_dual(file.path(figure_dir, "representative_gene_heatmap_3per_module"), p,
+    width = 14.5, height = 11.5, rasterize = FALSE)
 }
 
 message("Updating report module figures from existing CSV results...")
 plot_module_means(module_order, "module_mean_response_heatmap_ordered")
 plot_module_means(sprintf("M%02d", 1:8), "module_mean_response_heatmap_header")
-plot_module_genes()
 message("Module report figures saved to: ", figure_dir)
 
 ## ************************************************************************************************
@@ -607,17 +604,7 @@ plot_module_go_views <- function() {
   utils::write.csv(rule_matches,
     file.path(figure_dir, "GO_BP_theme_rule_matches_long.csv"), row.names = FALSE)
 
-  ## Mandatory: one auditable Excel workbook, not optional/silent.
-  audit_xlsx <- file.path(figure_dir, "GO_BP_theme_category_audit.xlsx")
-  ekbSeq::export_excel(
-    list(Term_assignments = audit_excel,
-         Module_composition = tally,
-         All_rule_matches = rule_matches,
-         Keyword_rules = dictionary,
-         Curated_overrides = go_theme_overrides),
-    file = audit_xlsx, styled = TRUE)
-  if (!file.exists(audit_xlsx) || file.info(audit_xlsx)$size == 0L)
-    stop("GO audit XLSX missing or empty after export: ", audit_xlsx)
+  ## All five audit tables are already exported above as complete CSVs.
   flagged <- sum(reduced$needs_review)
   message("GO category audit: ", nrow(reduced), " module/GO-term assignments; ",
           flagged, " flagged for review; curated GO-ID overrides are already resolved. See ",
@@ -654,7 +641,8 @@ plot_module_go_views <- function() {
       axis.text.y = ggplot2::element_text(size = 8.8),
       plot.title = ggplot2::element_text(face = "bold", size = 13),
       legend.position = "bottom")
-  export_module_plot(p_dot, "module_GO_BP_dotplot", 12.5, 9.5)
+  ekbSeq::export_plot_dual(file.path(figure_dir, "module_GO_BP_dotplot"), p_dot,
+    width = 12.5, height = 9.5, rasterize = FALSE)
 
   ## Retain the earlier optional module-GO bipartite network as an alternative.
   module_nodes <- data.frame(module = module_order,
@@ -697,7 +685,8 @@ plot_module_go_views <- function() {
     ggplot2::labs(title = "Module-GO association network",
       subtitle = "Edges: significant GO-BP enrichment (BH FDR < 0.05)",
       caption = "Theme-selected GO representatives; shared terms can connect multiple modules. No causal network.")
-  export_module_plot(p_network, "module_GO_BP_network", 14.5, 10.5)
+  ekbSeq::export_plot_dual(file.path(figure_dir, "module_GO_BP_network"), p_network,
+    width = 14.5, height = 10.5, rasterize = FALSE)
 
   ## Each miniature pie is a distribution of nonredundant GO-TERM COUNTS,
   ## not a quantitative share of responding genes. M03 has no pie at all.
@@ -768,14 +757,19 @@ plot_module_go_views <- function() {
       ggplot2::aes(x = x, y = y, label = label), inherit.aes = FALSE,
       size = 2.9, color = "grey40")
   }
-  export_module_plot(pie, "module_GO_BP_theme_pies", 9.0, 12.0)
+  ekbSeq::export_plot_dual(file.path(figure_dir, "module_GO_BP_theme_pies"), pie,
+    width = 9.0, height = 12.0, rasterize = FALSE)
   combo <- (p_dot + pie + patchwork::plot_layout(widths = c(1.7, 1.3))) +
     patchwork::plot_annotation(title = "Biological characterization of radiation-response modules",
       subtitle = "Selected representative GO-BP terms and all semantically reduced significant GO-BP terms",
       caption = "Pie slices count semantically reduced GO-BP terms (FDR < 0.05), not genes or pathway activity. Keyword categories include documented GO-ID overrides; small slices are unlabeled.")
-  export_module_plot(combo, "module_GO_BP_dotplot_theme_pies", 18.0, 12.4)
+  ekbSeq::export_plot_dual(file.path(figure_dir, "module_GO_BP_dotplot_theme_pies"), combo,
+    width = 18.0, height = 12.4, rasterize = FALSE)
   message("GO biological themes: term-level assignments + summary exported under ", figure_dir)
   invisible(list(dotplot = p_dot, pies = pie, dominant = dominant))
 }
 
 plot_module_go_views()
+
+## Run the fixed gene-panel audit after the independent GO figures.
+plot_module_genes()

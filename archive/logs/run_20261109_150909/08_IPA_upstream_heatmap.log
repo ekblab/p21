@@ -1,0 +1,9 @@
+
+
+here() starts at /run/user/1001/gvfs/smb-share:server=192.168.35.240,share=zellbiologie/Aktuell/Eigene Dateien/Eigene Dateien_Marc/R/Github/ekblab/p21
+Fehler in read_ipa_pair("upstream_regulators", comparison) : 
+  Missing original IPA export(s):
+/run/user/1001/gvfs/smb-share:server=192.168.35.240,share=zellbiologie/Aktuell/Eigene Dateien/Eigene Dateien_Marc/R/Github/ekblab/p21/Results/07_IPA/upstream_regulators_comparison_KO_minus_WT_zscores.txt
+/run/user/1001/gvfs/smb-share:server=192.168.35.240,share=zellbiologie/Aktuell/Eigene Dateien/Eigene Dateien_Marc/R/Github/ekblab/p21/Results/07_IPA/upstream_regulators_comparison_KO_minus_WT_bh_pval.txt
+Ruft auf: select_ipa -> read_ipa_pair
+Ausführung angehalten

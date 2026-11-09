@@ -1,0 +1,8 @@
+
+
+here() starts at /run/user/1001/gvfs/smb-share:server=192.168.35.240,share=zellbiologie/Aktuell/Eigene Dateien/Eigene Dateien_Marc/R/Github/ekblab/p21
+No z-score in any contrast (omitting from heatmap): E2F5
+Warnmeldung:
+In grid.Call.graphics(C_text, as.graphicsAnnot(x$label), x$x, x$y,  :
+  for '—' in 'mbcsToSbcs': - substituted for — (U+2014)
+* in the function heatmap: BH-adjusted p < 0.05; grey: no IPA z-score.

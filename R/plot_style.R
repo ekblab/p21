@@ -53,3 +53,8 @@ p21_theme <- function(base_size = 12) {
       legend.box.background = ggplot2::element_blank()
     )
 }
+
+## **** Diverging heatmap palette; relative stops shared across metrics
+p21_heatmap_colors <- c("#12386F", "#306FB3", "#94BDE2", "#E0ECF8", "#FFFFFF",
+                        "#FAE1DD", "#E89A94", "#C94644", "#941E2C")
+p21_heatmap_stops <- c(-1, -.75, -.40, -.12, 0, .12, .40, .75, 1)

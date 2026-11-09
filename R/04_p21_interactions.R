@@ -44,10 +44,8 @@ if (!requireNamespace("here", quietly = TRUE)) stop("Install 'here'.")
 here::i_am("R/04_p21_interactions.R")
 source(here::here("R", "00_setup.R"))
 source(here::here("R", "plot_style.R"))
-for (pkg in c("DESeq2", "SummarizedExperiment", "ashr", "ggplot2", "patchwork",
-              "EnhancedVolcano", "ekbSeq", "scales")) {
-  if (!requireNamespace(pkg, quietly = TRUE)) stop("Missing R package: ", pkg)
-}
+p21_check(c("DESeq2", "SummarizedExperiment", "ashr", "ggplot2", "patchwork",
+              "EnhancedVolcano", "ekbSeq", "scales"))
 
 alpha <- 0.05
 root <- here::here("Results", "04_p21_interactions")

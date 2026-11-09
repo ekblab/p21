@@ -10,11 +10,4 @@ p21_sensitivity_dir <- file.path(p21_result_root, "03_PROCESSING_MATCHED_SENSITI
 p21_module_order <- c("M01", "M08", "M02", "M06", "M03", "M05", "M04", "M07")
 p21_module_colors <- c(M01 = "#E64B35", M02 = "#4DBBD5", M03 = "#00A087",
   M04 = "#3C5488", M05 = "#F39B7F", M06 = "#8491B4", M07 = "#91D1C2", M08 = "#7E6148")
-p21_check <- function(packages) {
-  missing <- packages[!vapply(packages, requireNamespace, logical(1), quietly = TRUE)]
-  if (length(missing)) stop("Missing required R packages: ", paste(missing, collapse = ", "))
-  invisible(TRUE)
-}
-p21_export <- function(path, plot, width, height) {
-  ekbSeq::export_plot_dual(path, plot, width = width, height = height, rasterize = FALSE)
-}
+source(here::here("R", "project_helpers.R"), local = TRUE)

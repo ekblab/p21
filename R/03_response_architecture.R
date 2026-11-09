@@ -9,6 +9,7 @@
 ## before the two downstream stages run. No flags or run-mode switches.
 
 if (!requireNamespace("here", quietly = TRUE)) stop("Missing package: here")
+here::i_am("R/03_response_architecture.R")
 source(here::here("R", "03_shared.R"), local = TRUE)
 p21_check(c("ggplot2", "clusterProfiler", "org.Hs.eg.db", "GOSemSim",
             "scales", "ekbSeq", "DESeq2", "SummarizedExperiment"))
@@ -28,25 +29,11 @@ pca_dir <- p21_pca_dir
 mod_dir <- p21_module_dir
 sens_dir <- p21_sensitivity_dir
 for (d in c(pca_dir, mod_dir, sens_dir)) dir.create(d, showWarnings = FALSE, recursive = TRUE)
-## ******
-## Small helpers used only by this script
-## Reuse the common plot style and export PNG/SVG through ekbSeq.
-plot_theme <- function(size = 11) {
-  if (exists("p21_theme", mode = "function")) p21_theme(size) else ggplot2::theme_classic(base_size = size)
-}
-export <- function(path, p, w, h) p21_export(path, p, w, h)
-
-## Timestamped messages remain visible when sourced in RStudio.
-status <- function(...) {
-  message(sprintf("[%s] %s", format(Sys.time(), "%H:%M:%S"), paste0(..., collapse = "")))
-  flush.console()
-}
-
 ## ************************************************************************************************
 ## Assemble twelve primary irradiation-response profiles
 ## All responses originate from Model A and use ashr-shrunken log2FC.
 ## The DEG union determines the module input; no extra effect-size cutoff.
-status("1/5 | Reading twelve ashr tables and the processed object")
+p21_status("1/5 | Reading twelve ashr tables and the processed object")
 profiles <- expand.grid(genotype = c("wt", "p21_neg"), radiation = c("7gy", "UVA", "UVB"),
                         cell_line = c("HT1080", "MCF10A"), stringsAsFactors = FALSE)
 profiles$id <- with(profiles, paste(cell_line, genotype, radiation, sep = "_"))
@@ -105,7 +92,7 @@ utils::write.csv(data.frame(metric = c("DEG_union", "adequately_expressed", "L2_
 ## Each response (not each biological sample) is one PCA observation.
 ## Gene-center, but do NOT variance-scale the twelve response vectors.
 ## DEG union: PC1/2, PC1/3, PC2/3; expressed genes: PC1/2 for robustness.
-status("2/5 | Response PCAs and PC1-PC4 gene loadings")
+p21_status("2/5 | Response PCAs and PC1-PC4 gene loadings")
 rad_col <- c("7gy" = "#3C5488", UVA = "#E64B35", UVB = "#00A087")
 run_pca <- function(x, label, stem, extra_planes = FALSE) {
   pc <- stats::prcomp(t(x), center = TRUE, scale. = FALSE)
@@ -134,12 +121,13 @@ run_pca <- function(x, label, stem, extra_planes = FALSE) {
                                   labels = c("7 Gy", "UVA", "UVB"), name = "Irradiation") +
       ggplot2::scale_shape_manual(values = c(1, 16, 2, 17),
           labels = c("HT1080 WT", "HT1080 p21−", "MCF10A WT", "MCF10A p21−"), name = "Cell line / genotype") +
-      ggplot2::coord_fixed() + plot_theme(12) + ggplot2::theme(legend.position = "bottom", legend.box = "vertical") +
+      ggplot2::coord_fixed() + p21_theme(12) + ggplot2::theme(legend.position = "bottom", legend.box = "vertical") +
       ggplot2::labs(title = paste0("Irradiation response PCA | ", label),
         subtitle = "One shared PCA; WT → p21− transitions within each irradiation and cell line",
         x = sprintf("%s (%.1f%%)", xp, pct[plane[1]]), y = sprintf("%s (%.1f%%)", yp, pct[plane[2]]),
         caption = sprintf("%s genes | Model-A ashr log2FC; gene-centered, not variance-scaled", nrow(x)))
-    export(file.path(pca_dir, paste0(stem, "_", xp, "_", yp)), p, 9.0, 7.0)
+    ekbSeq::export_plot_dual(file.path(pca_dir, paste0(stem, "_", xp, "_", yp)), p,
+    width = 9.0, height = 7.0, rasterize = FALSE)
   }
   pc
 }
@@ -152,7 +140,7 @@ run_pca(lfc[exp_ids, , drop = FALSE], "all adequately expressed genes (robustnes
 ## L2 removes overall vector magnitude during clustering, but preserves sign
 ## and relative response pattern. All output heatmaps use ORIGINAL ashr log2FC.
 ## Eight modules are exploratory clusters, not discrete validated programs.
-status("3/5 | Clustering ", nrow(mod), " responsive genes into ", k, " L2 modules")
+p21_status("3/5 | Clustering ", nrow(mod), " responsive genes into ", k, " L2 modules")
 mag <- sqrt(rowSums(mod^2))
 normalized <- sweep(mod, 1, mag, "/")
 set.seed(21)
@@ -223,7 +211,7 @@ utils::write.csv(delta, file.path(mod_dir, "module_genotype_deltas_descriptive.c
 ## Runtime: simplify() can be expensive if it receives all GO terms. We keep
 ## all enrichment results, but simplify ONLY FDR-significant terms for display.
 ## Semantic data are cached and progress/timing is printed for each module.
-status("4/5 | GO-BP ORA; ", length(module_ids), " modules, with per-module progress")
+p21_status("4/5 | GO-BP ORA; ", length(module_ids), " modules, with per-module progress")
 valid_id <- function(x) !is.na(x) & nzchar(x) & x != "NA"
 universe <- unique(mem$ENTREZID[valid_id(mem$ENTREZID)])
 go_all <- list()
@@ -237,7 +225,7 @@ sem_data_attempted <- FALSE                 # do not retry if unavailable
 for (i in seq_along(module_ids)) {
   m <- module_ids[i]
   keys <- unique(mem$ENTREZID[mem$module == m & valid_id(mem$ENTREZID)])
-  status(sprintf("GO-BP %d/%d | %s | %d ENTREZ genes | enrichGO started", i, k, m, length(keys)))
+  p21_status(sprintf("GO-BP %d/%d | %s | %d ENTREZ genes | enrichGO started", i, k, m, length(keys)))
 
   t0 <- proc.time()[["elapsed"]]
   go <- tryCatch(
@@ -248,7 +236,7 @@ for (i in seq_along(module_ids)) {
   )
   tab <- if (is.null(go)) data.frame() else as.data.frame(go)
   n_sig <- if (nrow(tab)) sum(is.finite(tab$p.adjust) & tab$p.adjust < alpha) else 0L
-  status(sprintf("GO-BP %d/%d | %s | enrichGO done in %.1fs | %d terms, %d FDR<0.05",
+  p21_status(sprintf("GO-BP %d/%d | %s | enrichGO done in %.1fs | %d terms, %d FDR<0.05",
                  i, k, m, proc.time()[["elapsed"]] - t0, nrow(tab), n_sig))
   if (!nrow(tab)) {
     go_semantic_success[[m]] <- TRUE
@@ -264,7 +252,7 @@ for (i in seq_along(module_ids)) {
   ## Shared semantic data and FDR filtering limit expensive pairwise comparisons.
   if (nrow(sig) > 1L) {
     if (!sem_data_attempted) {
-      status("GO-BP | Preparing shared GO semantic data (once)...")
+      p21_status("GO-BP | Preparing shared GO semantic data (once)...")
       sem_data <- tryCatch(
         GOSemSim::godata("org.Hs.eg.db", ont = "BP", computeIC = FALSE),
         error = function(e) { warning("GO semantic data: ", conditionMessage(e)); NULL }
@@ -272,7 +260,7 @@ for (i in seq_along(module_ids)) {
       sem_data_attempted <- TRUE
     }
     if (!is.null(sem_data)) {
-      status(sprintf("GO-BP %d/%d | %s | simplifying %d significant terms...", i, k, m, nrow(sig)))
+      p21_status(sprintf("GO-BP %d/%d | %s | simplifying %d significant terms...", i, k, m, nrow(sig)))
       t1 <- proc.time()[["elapsed"]]
       go_sig <- go
       go_sig@result <- go@result[go@result$ID %in% sig$ID, , drop = FALSE]
@@ -285,7 +273,7 @@ for (i in seq_along(module_ids)) {
         sig <- sig[sig$ID %in% as.data.frame(reduced)$ID, , drop = FALSE]
         go_semantic_success[[m]] <- TRUE
       }
-      status(sprintf("GO-BP %d/%d | %s | simplify done in %.1fs | %d representative terms",
+      p21_status(sprintf("GO-BP %d/%d | %s | simplify done in %.1fs | %d representative terms",
                      i, k, m, proc.time()[["elapsed"]] - t1, nrow(sig)))
     }
   }
@@ -296,9 +284,9 @@ for (i in seq_along(module_ids)) {
   go_members[[m]] <- if (nrow(sig)) {
     unlist(strsplit(paste(head(sig$geneID, 5L), collapse = "/"), "/", fixed = TRUE))
   } else character()
-  status(sprintf("GO-BP %d/%d | %s finished | %d GO terms selected for figure", i, k, m, nrow(go_top[[m]])))
+  p21_status(sprintf("GO-BP %d/%d | %s finished | %d GO terms selected for figure", i, k, m, nrow(go_top[[m]])))
 }
-status("GO-BP | All eight modules completed; writing enrichment tables")
+p21_status("GO-BP | All eight modules completed; writing enrichment tables")
 combined <- if (length(go_all)) do.call(rbind, go_all) else data.frame()
 utils::write.csv(combined, file.path(mod_dir, "GO_BP_ORA_all_terms.csv"), row.names = FALSE)
 chosen <- if (length(go_top) && any(lengths(go_top) > 0)) do.call(rbind, go_top[lengths(go_top) > 0]) else data.frame()
@@ -344,7 +332,7 @@ utils::write.csv(module_go, file.path(mod_dir, "module_GO_BP_overview.csv"), row
 ## Select representative genes for the module heatmap
 ## Five genes best matching the module profile plus five curated or GO-supported
 ## genes from the SAME module. Export the reason behind every selection.
-status("5/5 | Selecting representative and biologically informative genes")
+p21_status("5/5 | Selecting representative and biologically informative genes")
 curated <- c("CDKN1A", "MDM2", "GADD45A", "DDB2", "BTG2", "ATM", "BAX", "IL6", "IL1B",
              "INHBA", "SERPINB2", "CD44", "JUN", "FOS", "CXCL8", "NFKBIA", "TNFAIP3",
              "MCM2", "MCM3", "MCM4", "MCM5", "MCM6", "MCM7", "GINS2", "DBF4",
@@ -388,13 +376,13 @@ utils::write.csv2(representative,
 ## Refit local raw counts with local dispersion/size-factor estimation.
 ## This does NOT test a processing × irradiation interaction; HT1080 WT 7 Gy
 ## also spans sequencing runs and is therefore not fully run-matched.
-status("Sensitivity | Refitting within-site DESeq2 models for ten sensitivity contrasts")
+p21_status("Sensitivity | Refitting within-site DESeq2 models for ten sensitivity contrasts")
 meta <- as.data.frame(SummarizedExperiment::colData(processed$dds))
 if (!all(c("cell_line", "genotype", "radiation", "processing", "sequencing_run", "group") %in% names(meta)))
   stop("Missing sample metadata for matched-control sensitivity analysis.")
 sens_rows <- list()
 for (site in c("EKB", "UKD")) {
-  status("Processing sensitivity | ", site, " | fitting local DESeq2 model...")
+  p21_status("Processing sensitivity | ", site, " | fitting local DESeq2 model...")
   keep <- as.character(meta$processing) == site
   if (site == "UKD") keep <- keep & !(meta$cell_line == "MCF10A" & meta$genotype == "wt")
   site_meta <- meta[keep, , drop = FALSE]
@@ -404,7 +392,7 @@ for (site in c("EKB", "UKD")) {
   local_dds <- DESeq2::DESeqDataSetFromMatrix(countData = DESeq2::counts(processed$dds)[, keep, drop = FALSE],
     colData = site_meta, design = ~ local_group)
   local_dds <- DESeq2::DESeq(local_dds, quiet = TRUE)
-  status("Processing sensitivity | ", site, " | model fitted; comparing treatment effects")
+  p21_status("Processing sensitivity | ", site, " | model fitted; comparing treatment effects")
   subset_plan <- profiles[profiles$radiation %in% if (site == "EKB") "UVB" else c("7gy", "UVA"), ]
   if (site == "UKD") subset_plan <- subset_plan[!(subset_plan$cell_line == "MCF10A" & subset_plan$genotype == "wt"), ]
   for (j in seq_len(nrow(subset_plan))) {
@@ -412,7 +400,8 @@ for (site in c("EKB", "UKD")) {
     treatment <- group_name(r$cell_line, r$genotype, r$radiation)
     control <- group_name(r$cell_line, r$genotype, "control")
     if (!all(c(treatment, control) %in% levels(site_meta$local_group))) next
-    local <- DESeq2::results(local_dds, contrast = c("local_group", treatment, control), alpha = alpha)
+    local <- ekbSeq::deseq_contrast(local_dds, treatment, control, condition = "local_group",
+      lfc_threshold = 0, p_threshold = alpha)
     reference_path <- file.path(primary, "unshrunken", paste0(r$id, "_vs_control_unshrunken.csv"))
     if (!file.exists(reference_path)) stop("Missing reference unshrunken file: ", reference_path)
     ref <- utils::read.csv(reference_path, stringsAsFactors = FALSE)
@@ -465,7 +454,7 @@ p_sensitivity <- ggplot2::ggplot(sensitivity,
   ggplot2::scale_shape_manual(values = c("Run-matched" = 16, "Mixed runs" = 2), name = "Sequencing runs") +
   ggplot2::scale_x_continuous(expand = ggplot2::expansion(mult = c(0, 0.30)),
                               labels = scales::label_number(accuracy = 0.02)) +
-  plot_theme(11) +
+  p21_theme(11) +
   ggplot2::labs(title = "Processing-matched control sensitivity",
                 subtitle = sprintf("Primary Model A versus processing-specific refits | %s expressed genes/contrast",
                                    scales::comma(stats::median(sensitivity$n_comparable_genes))),
@@ -476,7 +465,8 @@ p_sensitivity <- ggplot2::ggplot(sensitivity,
                  axis.line = ggplot2::element_line(color = "black", linewidth = 0.55),
                  axis.text.y = ggplot2::element_text(size = 10),
                  plot.caption = ggplot2::element_text(size = 9, color = "grey35"))
-export(file.path(sens_dir, "processing_matched_vs_primary_LFC_diagnostic"), p_sensitivity, 11.8, 7.0)
+ekbSeq::export_plot_dual(file.path(sens_dir, "processing_matched_vs_primary_LFC_diagnostic"), p_sensitivity,
+    width = 11.8, height = 7.0, rasterize = FALSE)
 writeLines(c("Sensitivity only: contrasts refit within processing site, using only matching-site controls.",
  "EKB: four UVB contrasts; UKD: 7 Gy/UVA in HT1080 WT, HT1080 p21-negative and MCF10A p21-negative.",
  "MCF10A WT 7 Gy/UVA is excluded because there are no UKD WT control samples.",
@@ -487,7 +477,7 @@ writeLines(c("Sensitivity only: contrasts refit within processing site, using on
 ## ************************************************************************************************
 ## Summary: keep Model A as the sole biological analysis; processing-matched
 ## refits are diagnostics only. Formal interaction contrasts follow in script 04.
-status("Complete | ", nrow(mod), " response genes; eight L2 modules; outputs in ", root)
+p21_status("Complete | ", nrow(mod), " response genes; eight L2 modules; outputs in ", root)
 
 ## Run the next two stages only after stage 1 completed successfully.
 ## Each can also be rerun independently without recalculating these results.

@@ -1,0 +1,47 @@
+         used (Mb) gc trigger (Mb) max used (Mb)
+Ncells 302258 16.2     709531 37.9   500875 26.8
+Vcells 524092  4.0    8388608 64.0  1977569 15.1
+here() starts at /run/user/1001/gvfs/smb-share:server=192.168.35.240,share=zellbiologie/Aktuell/Eigene Dateien/Eigene Dateien_Marc/R/Github/ekblab/p21
+
+
+p21 setup successful: essential packages and input files found.
+~processing + group: 91 samples, 17 coefficients (full rank).
+~processing + sequencing_run + group: 91 samples, 18 coefficients (full rank).
+Primary contrast 1/12: HT1080_wt_7gy
+Primary contrast 2/12: HT1080_wt_UVA
+Primary contrast 3/12: HT1080_wt_UVB
+Primary contrast 4/12: HT1080_p21_neg_7gy
+Primary contrast 5/12: HT1080_p21_neg_UVA
+Primary contrast 6/12: HT1080_p21_neg_UVB
+Primary contrast 7/12: MCF10A_wt_7gy
+Primary contrast 8/12: MCF10A_wt_UVA
+Primary contrast 9/12: MCF10A_wt_UVB
+Primary contrast 10/12: MCF10A_p21_neg_7gy
+Primary contrast 11/12: MCF10A_p21_neg_UVA
+Primary contrast 12/12: MCF10A_p21_neg_UVB
+Warnmeldungen:
+1: Using `size` aesthetic for lines was deprecated in ggplot2 3.4.0.
+ℹ Please use `linewidth` instead.
+ℹ The deprecated feature was likely used in the EnhancedVolcano package.
+  Please report the issue to the authors. 
+2: The `size` argument of `element_rect()` is deprecated as of ggplot2 3.4.0.
+ℹ Please use the `linewidth` argument instead.
+ℹ The deprecated feature was likely used in the EnhancedVolcano package.
+  Please report the issue to the authors. 
+ cell_line genotype radiation n_DEG n_up n_down
+    HT1080       wt       7gy  2658 1562   1096
+    HT1080       wt       UVA  5882 3114   2768
+    HT1080       wt       UVB  5908 3288   2620
+    HT1080  p21_neg       7gy  2031 1207    824
+    HT1080  p21_neg       UVA  4613 2393   2220
+    HT1080  p21_neg       UVB  4679 2550   2129
+    MCF10A       wt       7gy  2669 1555   1114
+    MCF10A       wt       UVA  2819 1576   1243
+    MCF10A       wt       UVB  3549 2013   1536
+    MCF10A  p21_neg       7gy  3816 2287   1529
+    MCF10A  p21_neg       UVA  2090 1140    950
+    MCF10A  p21_neg       UVB  5405 2915   2490
+Fitting Model B for sensitivity analysis only ...
+Primary results: /run/user/1001/gvfs/smb-share:server=192.168.35.240,share=zellbiologie/Aktuell/Eigene Dateien/Eigene Dateien_Marc/R/Github/ekblab/p21/Results/02_primary_DE/01_PRIMARY_model_A
+Sensitivity check: /run/user/1001/gvfs/smb-share:server=192.168.35.240,share=zellbiologie/Aktuell/Eigene Dateien/Eigene Dateien_Marc/R/Github/ekblab/p21/Results/02_primary_DE/02_SENSITIVITY_model_B
+Done: 12 primary contrasts, 12 ashr-shrunken tables, one DEG summary.

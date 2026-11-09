@@ -41,9 +41,7 @@ if (!requireNamespace("here", quietly = TRUE)) stop("Install the 'here' package.
 here::i_am("R/05_module_integration.R")
 source(here::here("R", "00_setup.R"))
 source(here::here("R", "plot_style.R"))
-for (pkg in c("ggplot2", "ekbSeq", "scales")) {
-  if (!requireNamespace(pkg, quietly = TRUE)) stop("Missing R package: ", pkg)
-}
+p21_check(c("ggplot2", "ekbSeq", "scales"))
 
 alpha <- 0.05
 root <- here::here("Results", "05_module_integration")
@@ -54,18 +52,11 @@ response_path <- here::here("Results", "03_response_architecture", "response_mat
 interaction_dir <- here::here("Results", "04_p21_interactions", "tables", "shrunken")
 for (d in c(tab_dir, fig_dir)) dir.create(d, recursive = TRUE, showWarnings = FALSE)
 
-status <- function(...) {
-  message(sprintf("[%s] %s", format(Sys.time(), "%H:%M:%S"), paste0(..., collapse = "")))
-  flush.console()
-}
-plot_theme <- function(size = 10) {
-  if (exists("p21_theme", mode = "function")) p21_theme(size) else ggplot2::theme_classic(base_size = size)
-}
 
 ## ************************************************************************************************
 ## Read fixed L2 module assignments and original ashr response profiles
 ## Row alignment is ALWAYS by ENSEMBL; never by CSV row position or gene symbol.
-status("1/5 | Reading the fixed L2 modules and twelve irradiation-response profiles")
+p21_status("1/5 | Reading the fixed L2 modules and twelve irradiation-response profiles")
 mem_path <- file.path(mod_dir, "module_membership.csv")
 required <- c(mem_path, response_path)
 if (any(!file.exists(required))) stop("Missing script-03 outputs:\n", paste(required[!file.exists(required)], collapse = "\n"))
@@ -104,7 +95,7 @@ if (file.exists(labels_path)) {
 ## ************************************************************************************************
 ## Read all six directly shrunken interaction contrasts from script 04
 ## The 'padj' in these ashr tables is still the ORIGINAL DESeq2 Wald FDR.
-status("2/5 | Reading six directly shrunken interaction tables")
+p21_status("2/5 | Reading six directly shrunken interaction tables")
 plan <- expand.grid(radiation = c("7gy", "UVA", "UVB"),
                     cell_line = c("HT1080", "MCF10A"), stringsAsFactors = FALSE)
 plan$id <- with(plan, paste(cell_line, radiation, sep = "_"))
@@ -160,7 +151,7 @@ for (j in seq_len(nrow(plan))) {
 ## Test universe = L2 genes having a testable Wald adjusted p-value for the
 ## respective interaction. This controls for differing module testability.
 ## Fisher tests are ONE-SIDED enrichment tests, not tests of a mean LFC.
-status("3/5 | Summarizing interaction direction, strength and module enrichment")
+p21_status("3/5 | Summarizing interaction direction, strength and module enrichment")
 rows <- vector("list", length(module_ids) * nrow(plan))
 values <- vector("list", nrow(plan))
 hits <- list()
@@ -266,7 +257,7 @@ names(response_tick) <- profiles$id
 ## intentional. They follow the layout of the original script-03 heatmap.
 ## Strong negative correlations between module mean profiles motivate the
 ## pairwise row order; they do NOT imply a shared pathway or justify merging.
-status("4/5 | Exporting two concise heatmaps with paired module order")
+p21_status("4/5 | Exporting two concise heatmaps with paired module order")
 pair_order <- c("M01", "M08", "M02", "M06", "M03", "M05", "M04", "M07")
 pair_names <- module_labels$descriptive_pattern[match(pair_order, module_ids)]
 pair_names[is.na(pair_names) | !nzchar(pair_names)] <- "Response pattern"
@@ -284,7 +275,7 @@ interaction_pair$module <- factor(row_labels[as.character(interaction_pair$modul
 tile_label <- function(x) ifelse(abs(x) < 0.005, "0.00", sprintf("%+.2f", x))
 response_pair$value_label <- tile_label(response_pair$mean_LFC)
 
-pair_theme <- plot_theme(11) + ggplot2::theme(
+pair_theme <- p21_theme(11) + ggplot2::theme(
   panel.grid = ggplot2::element_blank(), panel.border = ggplot2::element_blank(),
   panel.spacing.x = grid::unit(0.22, "cm"),
   strip.background = ggplot2::element_blank(),
@@ -368,7 +359,7 @@ ekbSeq::export_plot_dual(file.path(fig_dir, "module_response_strength_change"), 
 ## This assesses stability of DESCRIPTIVE centroid correlations under subsampling
 ## *within fixed modules*. It is not a p-value, not an independent validation,
 ## and does not address biological-replicate variance or clustering selection.
-status("5/5 | Checking descriptive stability of four inverse response pairs")
+p21_status("5/5 | Checking descriptive stability of four inverse response pairs")
 set.seed(20261012)
 pair_list <- list(c("M01", "M08"), c("M02", "M06"),
                   c("M03", "M05"), c("M04", "M07"))
@@ -399,5 +390,5 @@ utils::write.csv(do.call(rbind, pair_rows),
 ## An enriched module is NOT necessarily uniformly p21-dependent, and a module
 ## without enrichment is NOT proven p21-independent. Biological module names
 ## and any merging remain deferred until these patterns are reviewed.
-status("Complete |: 8 unchanged modules, 6 contrasts, 48 summaries")
+p21_status("Complete |: 8 unchanged modules, 6 contrasts, 48 summaries")
 message("Results: ", root)

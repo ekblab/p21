@@ -1,0 +1,15 @@
+         used (Mb) gc trigger (Mb) max used (Mb)
+Ncells 302258 16.2     709531 37.9   500875 26.8
+Vcells 524092  4.0    8388608 64.0  1977569 15.1
+here() starts at /run/user/1001/gvfs/smb-share:server=192.168.35.240,share=zellbiologie/Aktuell/Eigene Dateien/Eigene Dateien_Marc/R/Github/ekblab/p21
+
+
+p21 setup successful: essential packages and input files found.
+[15:25:43] 1/5 | Reading the fixed L2 modules and twelve irradiation-response profiles
+[15:25:43] 2/5 | Reading six directly shrunken interaction tables
+[15:25:54] 3/5 | Summarizing interaction direction, strength and module enrichment
+Significant module-by-condition enrichments (exploratory BH < 0.05): 9/48
+[15:25:55] 4/5 | Exporting two concise heatmaps with paired module order
+[15:26:00] 5/5 | Checking descriptive stability of four inverse response pairs
+[15:26:00] Complete |: 8 unchanged modules, 6 contrasts, 48 summaries
+Results: /run/user/1001/gvfs/smb-share:server=192.168.35.240,share=zellbiologie/Aktuell/Eigene Dateien/Eigene Dateien_Marc/R/Github/ekblab/p21/Results/05_module_integration

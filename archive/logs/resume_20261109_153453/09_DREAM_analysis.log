@@ -1,0 +1,47 @@
+
+
+Publication DREAM-positive targets: 410
+Loading HT1080_7gy ...
+Loading HT1080_UVA ...
+Loading HT1080_UVB ...
+Loading MCF10A_7gy ...
+Loading MCF10A_UVA ...
+Loading MCF10A_UVB ...
+Warnmeldungen:
+1: In prepareStats(stats, scoreType, gseaParam) :
+  There are ties in the preranked stats (5.84% of the list).
+The order of those tied genes will be arbitrary, which may produce unexpected results.
+2: In prepareStats(stats, scoreType, gseaParam) :
+  There are ties in the preranked stats (5.13% of the list).
+The order of those tied genes will be arbitrary, which may produce unexpected results.
+3: In prepareStats(stats, scoreType, gseaParam) :
+  There are ties in the preranked stats (7.35% of the list).
+The order of those tied genes will be arbitrary, which may produce unexpected results.
+4: In prepareStats(stats, scoreType, gseaParam) :
+  There are ties in the preranked stats (5.46% of the list).
+The order of those tied genes will be arbitrary, which may produce unexpected results.
+5: In prepareStats(stats, scoreType, gseaParam) :
+  There are ties in the preranked stats (5.38% of the list).
+The order of those tied genes will be arbitrary, which may produce unexpected results.
+6: In prepareStats(stats, scoreType, gseaParam) :
+  There are ties in the preranked stats (5.38% of the list).
+The order of those tied genes will be arbitrary, which may produce unexpected results.
+Significant DREAM GSEAs (BH across six): 5
+GO-BP audit: 74 targets match replication AND DDR; 191 match multiple GO groups. See DREAM_GO_category_audit.csv.
+
+DREAM analysis complete. Outputs: /run/user/1001/gvfs/smb-share:server=192.168.35.240,share=zellbiologie/Aktuell/Eigene Dateien/Eigene Dateien_Marc/R/Github/ekblab/p21/Results/09_DREAM_analysis
+Significant GSEA: HT1080_7gy, HT1080_UVA, HT1080_UVB, MCF10A_7gy, MCF10A_UVB
+   contrast       NES       pvalue      FDR_six NES_baseMean10
+ HT1080_7gy  2.485072 1.486872e-39 4.460616e-39      3.1667752
+ HT1080_UVA  2.642301 3.616530e-65 2.169918e-64      3.6022533
+ HT1080_UVB  2.450862 5.752311e-38 1.150462e-37      2.9479456
+ MCF10A_7gy -1.935464 8.480504e-16 1.272076e-15     -2.0289533
+ MCF10A_UVA -1.085185 1.763656e-01 1.763656e-01     -0.8590314
+ MCF10A_UVB -1.468329 2.778745e-05 3.334494e-05     -1.4099853
+ FDR_six_baseMean10
+       9.365454e-49
+       7.761599e-96
+       1.786531e-42
+       5.046247e-13
+       8.926602e-01
+       3.393316e-03

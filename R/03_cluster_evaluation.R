@@ -4,6 +4,7 @@
 ## Does not fit DESeq2, run GO, or regenerate biological classification.
 
 if (!requireNamespace("here", quietly = TRUE)) stop("Missing package: here")
+here::i_am("R/03_cluster_evaluation.R")
 source(here::here("R", "03_shared.R"), local = TRUE)
 p21_check(c("ekbSeq", "ggplot2", "cluster", "scales"))
 
@@ -215,8 +216,8 @@ p_pca <- ggplot2::ggplot(gene_pc, ggplot2::aes(PC1, PC2, color = module)) +
     subtitle = "Each dot represents one gene",
     x = sprintf("PC1 (%.1f%%)", var_pct[1]), y = sprintf("PC2 (%.1f%%)", var_pct[2]),
     caption = "Clustering was performed in 12D using L2-normalized irradiation-response profiles; PCA is a two-dimensional visualization.")
-p21_export(file.path(report_dir, "k8_gene_profile_PCA"), p_pca,
-                          width = 6, height = 6)
+ekbSeq::export_plot_dual(file.path(report_dir, "k8_gene_profile_PCA"), p_pca,
+    width = 6, height = 6, rasterize = FALSE)
 utils::write.csv(data.frame(ENSEMBL = response$ENSEMBL, SYMBOL = response$SYMBOL,
                             module = ref_cluster, gene_pc[, 1:2]),
                  file.path(report_dir, "k8_gene_profile_PCA_coordinates.csv"), row.names = FALSE)
@@ -239,8 +240,8 @@ p_metrics <- ggplot2::ggplot(graph_metrics, ggplot2::aes(x = k, y = value)) +
     subtitle = "Separation (silhouette) and stability (ARI) across k = 4–12",
     x = "Number of modules (k)", y = "Mean score (± SD)",
     caption = "ARI measures whether genes retain their cluster memberships across repeated 80% gene subsamples (1 = identical grouping). Dashed line: selected k = 8.")
-p21_export(file.path(report_dir, "k_selection_metrics"), p_metrics,
-                          width = 12.0, height = 5.3)
+ekbSeq::export_plot_dual(file.path(report_dir, "k_selection_metrics"), p_metrics,
+    width = 12.0, height = 5.3, rasterize = FALSE)
 
 ## Compare independently fitted solutions for every consecutive k=4..12.
 ## Algorithm is independent of GO results and module labels:
@@ -441,8 +442,8 @@ plot_tree <- ggplot2::ggplot() +
         "Selected splits at k = 6→7 and 7→8 are highlighted. ",
         "Node IDs are specific to each k; independent k-means fits are not hierarchical. ",
         "Flows <1% of the source cluster are omitted visually but retained in CSV."))
-p21_export(file.path(report_dir, "k_clustree_all"), plot_tree,
-                          width = 17, height = 10.5)
+ekbSeq::export_plot_dual(file.path(report_dir, "k_clustree_all"), plot_tree,
+    width = 17, height = 10.5, rasterize = FALSE)
 message("Complete k=4–12 gene-overlap tree exported to PNG/SVG: k_clustree_all")
 
 message("Evaluation complete; existing modules unchanged. Review: ", report_dir)

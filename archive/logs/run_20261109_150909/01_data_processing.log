@@ -1,0 +1,10 @@
+         used (Mb) gc trigger (Mb) max used (Mb)
+Ncells 302258 16.2     709531 37.9   500875 26.8
+Vcells 524092  4.0    8388608 64.0  1977569 15.1
+
+
+p21 setup successful: essential packages and input files found.
+Excluded 114 ERCC/SIRV spike-in features; 61806 features remain.
+~processing + group: 91 samples, 17 coefficients (full rank).
+~processing + sequencing_run + group: 91 samples, 18 coefficients (full rank).
+Processing complete: 91 samples, 61806 endogenous features. Saved Data/processed_data.rds

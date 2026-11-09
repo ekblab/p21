@@ -19,11 +19,9 @@ if (length(missing_files)) stop("Missing input files: ", paste(missing_files, co
 ## packages required for processing and the planned primary DE analysis
 ## Packages needed only by later analyses will be checked in those scripts.
 required_packages <- c("DESeq2", "SummarizedExperiment", "AnnotationDbi", "org.Hs.eg.db", "ashr", "ekbSeq")
-missing_packages <- required_packages[!vapply(required_packages, requireNamespace, logical(1), quietly = TRUE)]
-if (length(missing_packages)) stop("Install required R packages: ", paste(missing_packages, collapse = ", "))
-if (utils::packageVersion("ekbSeq") < "1.2.0") stop("ekbSeq >= 1.2.0 is required.")
-
 source("R/project_helpers.R")
+p21_check(required_packages)
+if (utils::packageVersion("ekbSeq") < "1.2.0") stop("ekbSeq >= 1.2.0 is required.")
 
 ## ******
 ## output directories and reproducibility

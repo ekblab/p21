@@ -1,0 +1,68 @@
+         used (Mb) gc trigger (Mb) max used (Mb)
+Ncells 302258 16.2     709531 37.9   500875 26.8
+Vcells 524092  4.0    8388608 64.0  1977569 15.1
+here() starts at /run/user/1001/gvfs/smb-share:server=192.168.35.240,share=zellbiologie/Aktuell/Eigene Dateien/Eigene Dateien_Marc/R/Github/ekblab/p21
+
+
+p21 setup successful: essential packages and input files found.
+[15:26:09] Preparing GO-BP semantic similarity (Wang; reused throughout)
+[15:26:09] 1/5 | Reading full module GO-BP ORA and fixed L2 membership
+[15:26:10] Module ORA | M01 | semantic selection among 74 significant GO terms
+[15:26:12] Module ORA | M08 | semantic selection among 403 significant GO terms
+[15:26:13] Module ORA | M02 | semantic selection among 445 significant GO terms
+[15:26:14] Module ORA | M06 | semantic selection among 16 significant GO terms
+[15:26:15] Module ORA | M05 | semantic selection among 40 significant GO terms
+[15:26:15] Module ORA | M04 | semantic selection among 62 significant GO terms
+[15:26:16] Module ORA | M07 | semantic selection among 11 significant GO terms
+[15:26:16] Module ORA | 1051 significant results; 21 representative GO-module pairs selected
+[15:26:16] 2/5 | Loading or computing six GO-BP interaction GSEAs
+[15:26:16] GO-GSEA 1/6 | HT1080_7gy | reading Wald statistics
+[15:26:18] GO-GSEA 1/6 | HT1080_7gy | 5128 tied Wald ranks (20.27%); deterministic ENTREZ ordering
+[15:26:18] GO-GSEA 1/6 | HT1080_7gy | 25301 ranked ENTREZ genes | gseGO started
+[15:27:23] GO-GSEA 1/6 | HT1080_7gy | 65.2s | 4697 tested terms, 393 FDR<0.05
+[15:27:23] GO-GSEA 2/6 | HT1080_UVA | reading Wald statistics
+[15:27:25] GO-GSEA 2/6 | HT1080_UVA | 5087 tied Wald ranks (20.11%); deterministic ENTREZ ordering
+[15:27:25] GO-GSEA 2/6 | HT1080_UVA | 25301 ranked ENTREZ genes | gseGO started
+[15:28:24] GO-GSEA 2/6 | HT1080_UVA | 59.5s | 4697 tested terms, 589 FDR<0.05
+[15:28:24] GO-GSEA 3/6 | HT1080_UVB | reading Wald statistics
+[15:28:26] GO-GSEA 3/6 | HT1080_UVB | 4783 tied Wald ranks (18.90%); deterministic ENTREZ ordering
+[15:28:26] GO-GSEA 3/6 | HT1080_UVB | 25301 ranked ENTREZ genes | gseGO started
+[15:29:06] GO-GSEA 3/6 | HT1080_UVB | 39.5s | 4697 tested terms, 266 FDR<0.05
+[15:29:06] GO-GSEA 4/6 | MCF10A_7gy | reading Wald statistics
+[15:29:07] GO-GSEA 4/6 | MCF10A_7gy | 5764 tied Wald ranks (22.78%); deterministic ENTREZ ordering
+[15:29:07] GO-GSEA 4/6 | MCF10A_7gy | 25301 ranked ENTREZ genes | gseGO started
+[15:29:38] GO-GSEA 4/6 | MCF10A_7gy | 31.1s | 4697 tested terms, 121 FDR<0.05
+[15:29:38] GO-GSEA 5/6 | MCF10A_UVA | reading Wald statistics
+[15:29:40] GO-GSEA 5/6 | MCF10A_UVA | 5904 tied Wald ranks (23.34%); deterministic ENTREZ ordering
+[15:29:40] GO-GSEA 5/6 | MCF10A_UVA | 25301 ranked ENTREZ genes | gseGO started
+[15:30:09] GO-GSEA 5/6 | MCF10A_UVA | 29.4s | 4697 tested terms, 138 FDR<0.05
+[15:30:09] GO-GSEA 6/6 | MCF10A_UVB | reading Wald statistics
+[15:30:11] GO-GSEA 6/6 | MCF10A_UVB | 5767 tied Wald ranks (22.79%); deterministic ENTREZ ordering
+[15:30:11] GO-GSEA 6/6 | MCF10A_UVB | 25301 ranked ENTREZ genes | gseGO started
+[15:30:34] GO-GSEA 6/6 | MCF10A_UVB | 23.5s | 4697 tested terms, 30 FDR<0.05
+Warnmeldungen:
+1: In prepare_gsea_inputs(geneList, scoreType, exponent) :
+  There are ties in the preranked stats (3.82% of the list). The order of those tied genes will be arbitrary, which may produce unexpected results.
+2: In gsea(geneList = geneList, gene_sets = geneSets, minGSSize = minGSSize,  :
+  For some pathways, in reality P-values are less than 1e-10. You can set the eps argument to zero for better estimation.
+3: In prepare_gsea_inputs(geneList, scoreType, exponent) :
+  There are ties in the preranked stats (3.47% of the list). The order of those tied genes will be arbitrary, which may produce unexpected results.
+4: In gsea(geneList = geneList, gene_sets = geneSets, minGSSize = minGSSize,  :
+  For some pathways, in reality P-values are less than 1e-10. You can set the eps argument to zero for better estimation.
+5: In prepare_gsea_inputs(geneList, scoreType, exponent) :
+  There are ties in the preranked stats (4.89% of the list). The order of those tied genes will be arbitrary, which may produce unexpected results.
+6: In gsea(geneList = geneList, gene_sets = geneSets, minGSSize = minGSSize,  :
+  For some pathways, in reality P-values are less than 1e-10. You can set the eps argument to zero for better estimation.
+7: In prepare_gsea_inputs(geneList, scoreType, exponent) :
+  There are ties in the preranked stats (3.58% of the list). The order of those tied genes will be arbitrary, which may produce unexpected results.
+8: In gsea(geneList = geneList, gene_sets = geneSets, minGSSize = minGSSize,  :
+  For some pathways, in reality P-values are less than 1e-10. You can set the eps argument to zero for better estimation.
+9: In prepare_gsea_inputs(geneList, scoreType, exponent) :
+  There are ties in the preranked stats (3.42% of the list). The order of those tied genes will be arbitrary, which may produce unexpected results.
+10: In prepare_gsea_inputs(geneList, scoreType, exponent) :
+  There are ties in the preranked stats (3.44% of the list). The order of those tied genes will be arbitrary, which may produce unexpected results.
+[15:30:37] 3/5 | Plotting semantically nonredundant module GO-ORA
+[15:30:39] 4/5 | Semantic GSEA term reduction and publication-style heatmap
+[15:30:41] GSEA | 1537 significant rows across six contrasts; 12 semantically distinct GO IDs displayed
+[15:30:43] 5/5 | Building six-theme functional landscape and provenance table
+[15:30:45] Complete | full ORA/GSEA preserved; representative figures and provenance: /run/user/1001/gvfs/smb-share:server=192.168.35.240,share=zellbiologie/Aktuell/Eigene Dateien/Eigene Dateien_Marc/R/Github/ekblab/p21/Results/06_functional_GO

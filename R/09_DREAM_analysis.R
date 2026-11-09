@@ -5,7 +5,7 @@
 # contrasts (Wald + ashr); twelve ashr irradiation-versus-control contrasts.
 # All DESeq2 results are read as-is. No model is refitted.
 #
-# Run at the p21 project root (see README_DREAM_09.md for options).
+# Run at the p21 project root; use --help for command-line options.
 # GSEA: all genes with finite ORIGINAL Wald statistics; BH across six contexts.
 # Effects and biological response plots: ashr-shrunken log2FC.
 
@@ -65,7 +65,7 @@ parse_options <- function(args) {
 # Fail before analysis if mandatory packages are absent. The GO database is
 # only necessary when GO-based leading-edge categories are requested.
 check_packages <- function(skip_go) {
-  packages <- c("fgsea", "ggplot2", "patchwork", "ekbSeq", "openxlsx", "readxl", "ggsci")
+  packages <- c("fgsea", "ggplot2", "patchwork", "ekbSeq", "readxl", "ggsci")
   if (!skip_go) packages <- c(packages, "AnnotationDbi", "org.Hs.eg.db")
   missing <- packages[!vapply(packages, requireNamespace, logical(1), quietly = TRUE)]
   if (length(missing)) {
@@ -96,6 +96,7 @@ get_project_root <- function(root) {
 
 opts <- parse_options(commandArgs(trailingOnly = TRUE))
 root <- get_project_root(opts$root)
+source(file.path(root, "R", "plot_style.R"))
 check_packages(opts$skip_go)
 
 # Use the regular p21 results directories, not the temporary upload archives.
@@ -572,9 +573,9 @@ plot_nes <- function(x) {
     ggplot2::geom_text(ggplot2::aes(label = sprintf("%+.2f%s", NES,
                                   ifelse(significant, " *", ""))),
                        size = 5.0) +
-    ggplot2::scale_fill_gradient2(low = "#385c98", mid = "#fafafa",
-                                  high = "#e34a33", midpoint = 0,
-                                  limits = c(-lim, lim), name = "NES") +
+    ggplot2::scale_fill_gradientn(colors = p21_heatmap_colors,
+      values = (p21_heatmap_stops + 1) / 2,
+      limits = c(-lim, lim), name = "NES") +
     ggplot2::coord_fixed(ratio = 1) +
     ggplot2::labs(title = "DREAM-target enrichment in p21 interaction rankings",
                   subtitle = "KO-minus-WT interactions | original Wald statistics",
@@ -838,8 +839,9 @@ if (length(significant_keys)) {
   p <- ggplot2::ggplot(hm, ggplot2::aes(x = condition, y = label, fill = effect)) +
     ggplot2::geom_tile(color = "white", linewidth = .15) +
     ggplot2::facet_grid(. ~ cell_line, scales = "free_x") +
-    ggplot2::scale_fill_gradient2(low = "#385c98", mid = "white",
-      high = "#e34a33", limits = c(-h_lim, h_lim), name = "ashr log2FC") +
+    ggplot2::scale_fill_gradientn(colors = p21_heatmap_colors,
+      values = (p21_heatmap_stops + 1) / 2,
+      limits = c(-h_lim, h_lim), name = "ashr log2FC") +
     ggplot2::labs(title = "Leading-edge DREAM genes | irradiation responses",
       subtitle = "Union of leading edges from significant DREAM GSEA contrasts; up to 50 genes",
       x = NULL, y = NULL, caption = "Selected genes are not representative of all DREAM targets.") +
@@ -850,7 +852,7 @@ if (length(significant_keys)) {
             max(6, min(12, 2.4 + length(ids) * .17)))
 }
 
-# ---- 07 | Auditable Excel and complete CSV exports --------------------------
+# ---- 07 | Complete CSV exports and provenance ------------------------------
 
 # Record paths to the source results directories (not temporary transport
 # archives), alongside analysis settings and software versions. Individual
@@ -912,18 +914,12 @@ utils::write.csv(leading, file.path(out_dir, "DREAM_leading_edge_genes.csv"),
 utils::write.csv(patterns, file.path(out_dir, "DREAM_response_patterns.csv"),
                  row.names = FALSE, na = "")
 
-# WORKFLOW NOTE: the existing Excel export is preserved for compatibility.
-# Current Research Analysis Principles favor assembling manuscript/supplement
-# workbooks later in a dedicated export script. Revising that workflow is
-# separate from correcting the input paths in this script.
-sheets <- list("GSEA_summary" = gsea,
-               "Response_patterns" = patterns,
-               "DREAM_gene_results" = dream_export,
-               "Leading_edges" = leading,
-               "Leading_edge_GO" = go_categories,
-               "Low_count_QC" = low_qc,
-               "Metadata" = meta)
-ekbSeq::export_excel(sheets, file.path(out_dir, "DREAM_analysis_results.xlsx"))
+# These two tables were previously available only in the workbook.
+# GO categories are already preserved completely in DREAM_GO_category_audit.csv.
+utils::write.csv(low_qc, file.path(out_dir, "DREAM_low_count_QC.csv"),
+                 row.names = FALSE, na = "")
+utils::write.csv(meta, file.path(out_dir, "DREAM_metadata.csv"),
+                 row.names = FALSE, na = "")
 
 message("\nDREAM analysis complete. Outputs: ", normalizePath(out_dir),
         "\nSignificant GSEA: ", paste(significant_keys, collapse = ", "))

@@ -2,7 +2,7 @@
 ## p21 bulk RNA-seq - Shared helpers
 ##
 ## Only reusable operations required across the planned scripts belong here.
-## Primary and downstream results are read/written as CSV or XLSX, NOT as RDS.
+## Primary and downstream results are read/written as CSV, NOT as RDS.
 ## The only persistent RDS is Data/processed_data.rds.
 ## ************************************************************************************************
 
@@ -77,4 +77,17 @@ result_table <- function(res, annotation) {
   idx <- match(tab$ENSEMBL, annotation$ENSEMBL)
   if (anyNA(idx)) stop("DESeq2 results contain features without annotation rows.")
   cbind(tab, annotation[idx, setdiff(names(annotation), "ENSEMBL"), drop = FALSE])
+}
+
+## ******
+## shared dependency checks and progress messages
+p21_check <- function(packages) {
+  missing <- packages[!vapply(packages, requireNamespace, logical(1), quietly = TRUE)]
+  if (length(missing)) stop("Missing required R packages: ", paste(missing, collapse = ", "))
+  invisible(TRUE)
+}
+
+p21_status <- function(...) {
+  message(sprintf("[%s] %s", format(Sys.time(), "%H:%M:%S"), paste0(..., collapse = "")))
+  flush.console()
 }
