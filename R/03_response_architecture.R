@@ -1,4 +1,4 @@
-## p21 / 03 | Primary response analysis and GO enrichment
+﻿## p21 / 03 | Primary response analysis and GO enrichment
 ## Run directly to execute the COMPLETE workflow (this file + both next stages):
 ##   source("R/03_response_architecture.R")
 ## For selective re-evaluation or replotting, source the dedicated stage.
